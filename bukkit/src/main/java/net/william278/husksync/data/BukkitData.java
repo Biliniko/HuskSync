@@ -480,7 +480,7 @@ public abstract class BukkitData implements Data {
         private static void addStatistic(@NotNull Player p, @NotNull Statistic id, @NotNull Map<String, Integer> map) {
             final int stat = p.getStatistic(id);
             if (stat != 0) {
-                map.put(id.getKey().getKey(), stat);
+                map.put(id.getKey().toString(), stat);
             }
         }
 
@@ -497,8 +497,8 @@ public abstract class BukkitData implements Data {
                         stat = p.getStatistic(id, ent);
                     }
                     if (stat != 0) {
-                        map.compute(id.getKey().getKey(), (k, v) -> v == null ? Maps.newHashMap() : v)
-                                .put(i.getKey().getKey(), stat);
+                        map.compute(id.getKey().toString(), (k, v) -> v == null ? Maps.newHashMap() : v)
+                                .put(i.getKey().toString(), stat);
                     }
                 } catch (IllegalStateException ignored) {
                 }
