@@ -53,6 +53,7 @@ import net.william278.husksync.mod.ForgeEventBridge;
 import net.william278.husksync.mod.ModDataManager;
 import net.william278.husksync.mod.ModDataProvider;
 import net.william278.husksync.mod.SolCarrotIntegration;
+import net.william278.husksync.mod.UltimineIntegration;
 import net.william278.husksync.migrator.LegacyMigrator;
 import net.william278.husksync.migrator.Migrator;
 import net.william278.husksync.migrator.MpdbMigrator;
@@ -115,6 +116,7 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     private DataAdapter dataAdapter;
     private ModDataManager modDataManager;
     private SolCarrotIntegration solCarrotIntegration;
+    private UltimineIntegration ultimineIntegration;
     private ForgeEventBridge forgeEventBridge;
     private DataSyncer dataSyncer;
     private LegacyConverter legacyConverter;
@@ -179,9 +181,14 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
         // Prepare SoL: Carrot integration
         initialize("solcarrot integration", (plugin) -> solCarrotIntegration = new SolCarrotIntegration(this));
 
+        // Prepare Ultimine integration
+        initialize("ultimine integration", (plugin) -> ultimineIntegration = new UltimineIntegration(this));
+
         // Prepare forge mod data event bridge
         initialize("forge mod data event bridge", (plugin) -> {
-            if (modDataManager != null && modDataManager.hasAvailableIntegrations()) {
+            if ((modDataManager != null && modDataManager.hasAvailableIntegrations())
+                    || (solCarrotIntegration != null && solCarrotIntegration.isAvailable())
+                    || (ultimineIntegration != null && ultimineIntegration.isAvailable())) {
                 forgeEventBridge = new ForgeEventBridge(this);
             }
         });
@@ -207,6 +214,10 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
             if (solCarrotIntegration != null && solCarrotIntegration.isAvailable()) {
                 registerSerializer(Identifier.SOLCARROT_FOODLIST,
                         new Serializer.Json<>(this, BukkitData.SolCarrotFoodList.class));
+            }
+            if (ultimineIntegration != null && ultimineIntegration.isAvailable()) {
+                registerSerializer(Identifier.ULTIMINE_ABILITY,
+                        new Serializer.Json<>(this, BukkitData.UltimineAbility.class));
             }
             validateDependencies();
         });
@@ -334,6 +345,11 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     @Nullable
     public SolCarrotIntegration getSolCarrotIntegration() {
         return solCarrotIntegration;
+    }
+
+    @Nullable
+    public UltimineIntegration getUltimineIntegration() {
+        return ultimineIntegration;
     }
 
     @Override

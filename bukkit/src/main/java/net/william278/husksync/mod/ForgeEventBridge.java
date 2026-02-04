@@ -75,6 +75,12 @@ public class ForgeEventBridge {
                 if (solCarrot != null) {
                     solCarrot.cachePlayerData(player);
                 }
+
+                final UltimineIntegration ultimine = plugin.getUltimineIntegration();
+                if (ultimine != null) {
+                    plugin.debug("Ultimine logout pre-cache for " + player.getName());
+                    ultimine.cachePlayerData(player);
+                }
             };
 
             addListener.invoke(eventBus, normalPriority, false, logoutEvent, listener);

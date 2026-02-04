@@ -32,6 +32,7 @@ import net.william278.husksync.adapter.Adaptable;
 import net.william278.husksync.config.Settings.SynchronizationSettings.AttributeSettings;
 import net.william278.husksync.mod.ModSlotData;
 import net.william278.husksync.mod.SolCarrotIntegration;
+import net.william278.husksync.mod.UltimineIntegration;
 import net.william278.husksync.user.BukkitUser;
 import org.bukkit.*;
 import org.bukkit.advancement.AdvancementProgress;
@@ -281,6 +282,33 @@ public abstract class BukkitData implements Data {
                 return;
             }
             integration.apply(user.getPlayer(), nbt);
+        }
+
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    public static class UltimineAbility extends BukkitData implements Data, Adaptable {
+
+        @SerializedName("can_ultimine")
+        private boolean canUltimine;
+
+        @NotNull
+        public static BukkitData.UltimineAbility from(boolean canUltimine) {
+            return new BukkitData.UltimineAbility(canUltimine);
+        }
+
+        @Override
+        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
+            final UltimineIntegration integration = plugin.getUltimineIntegration();
+            if (integration == null || !integration.isAvailable()) {
+                plugin.debug("Ultimine apply skipped (integration unavailable) for " + user.getPlayer().getName());
+                return;
+            }
+            plugin.debug("Ultimine apply snapshot value=" + canUltimine + " for " + user.getPlayer().getName());
+            integration.apply(user.getPlayer(), canUltimine);
         }
 
     }

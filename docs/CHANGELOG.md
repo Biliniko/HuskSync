@@ -6,4 +6,5 @@
 - Added `/modinv <type> <player> [version]` to view and edit mod container data.
 - Added `mod_data` sync feature flag and mod integration disable list.
 - Added development workflow documentation.
+- Added Ultimine Addition player ability (can_ultimine) sync.
 - Updated command, config, and data snapshot docs for mod data support.
