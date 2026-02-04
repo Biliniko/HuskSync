@@ -31,6 +31,7 @@ import net.william278.husksync.HuskSync;
 import net.william278.husksync.adapter.Adaptable;
 import net.william278.husksync.config.Settings.SynchronizationSettings.AttributeSettings;
 import net.william278.husksync.mod.ModSlotData;
+import net.william278.husksync.mod.SolCarrotIntegration;
 import net.william278.husksync.user.BukkitUser;
 import org.bukkit.*;
 import org.bukkit.advancement.AdvancementProgress;
@@ -252,6 +253,34 @@ public abstract class BukkitData implements Data {
                 return;
             }
             plugin.getModDataManager().apply(user.getPlayer(), this);
+        }
+
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    public static class SolCarrotFoodList extends BukkitData implements Data, Adaptable {
+
+        @SerializedName("nbt")
+        private String nbt;
+
+        @NotNull
+        public static BukkitData.SolCarrotFoodList from(@NotNull String nbt) {
+            return new BukkitData.SolCarrotFoodList(nbt);
+        }
+
+        @Override
+        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
+            if (nbt == null || nbt.isBlank()) {
+                return;
+            }
+            final SolCarrotIntegration integration = plugin.getSolCarrotIntegration();
+            if (integration == null || !integration.isAvailable()) {
+                return;
+            }
+            integration.apply(user.getPlayer(), nbt);
         }
 
     }

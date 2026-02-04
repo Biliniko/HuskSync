@@ -57,6 +57,7 @@ public class Identifier implements Comparable<Identifier> {
     public static final Identifier MOD_DATA = huskSync("mod_data", true,
             Dependency.optional("inventory")
     );
+    public static final Identifier SOLCARROT_FOODLIST = huskSync("solcarrot_foodlist", true);
     public static final Identifier ATTRIBUTES = huskSync("attributes", true,
             Dependency.optional("inventory"),
             Dependency.optional("potion_effects")
@@ -173,7 +174,7 @@ public class Identifier implements Comparable<Identifier> {
     public static Map<String, Boolean> getConfigMap() {
         return Map.ofEntries(Stream.of(
                         INVENTORY, ENDER_CHEST, POTION_EFFECTS, ADVANCEMENTS, LOCATION, STATISTICS,
-                        HEALTH, HUNGER, ATTRIBUTES, EXPERIENCE, GAME_MODE, FLIGHT_STATUS, PERSISTENT_DATA, MOD_DATA
+                        HEALTH, HUNGER, ATTRIBUTES, EXPERIENCE, GAME_MODE, FLIGHT_STATUS, PERSISTENT_DATA, MOD_DATA, SOLCARROT_FOODLIST
                 )
                 .map(Identifier::getConfigEntry)
                 .toArray(Map.Entry[]::new));

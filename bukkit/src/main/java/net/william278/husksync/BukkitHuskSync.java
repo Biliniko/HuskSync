@@ -52,6 +52,7 @@ import net.william278.husksync.maps.BukkitMapHandler;
 import net.william278.husksync.mod.ForgeEventBridge;
 import net.william278.husksync.mod.ModDataManager;
 import net.william278.husksync.mod.ModDataProvider;
+import net.william278.husksync.mod.SolCarrotIntegration;
 import net.william278.husksync.migrator.LegacyMigrator;
 import net.william278.husksync.migrator.Migrator;
 import net.william278.husksync.migrator.MpdbMigrator;
@@ -72,6 +73,7 @@ import org.bukkit.map.MapView;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import space.arim.morepaperlib.MorePaperLib;
 import space.arim.morepaperlib.scheduling.AsynchronousScheduler;
 import space.arim.morepaperlib.scheduling.AttachedScheduler;
@@ -112,6 +114,7 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     private BukkitEventListener eventListener;
     private DataAdapter dataAdapter;
     private ModDataManager modDataManager;
+    private SolCarrotIntegration solCarrotIntegration;
     private ForgeEventBridge forgeEventBridge;
     private DataSyncer dataSyncer;
     private LegacyConverter legacyConverter;
@@ -173,6 +176,9 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
         // Prepare mod data manager
         initialize("mod data manager", (plugin) -> modDataManager = new ModDataManager(this));
 
+        // Prepare SoL: Carrot integration
+        initialize("solcarrot integration", (plugin) -> solCarrotIntegration = new SolCarrotIntegration(this));
+
         // Prepare forge mod data event bridge
         initialize("forge mod data event bridge", (plugin) -> {
             if (modDataManager != null && modDataManager.hasAvailableIntegrations()) {
@@ -197,6 +203,10 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
             registerSerializer(Identifier.LOCATION, new Serializer.Json<>(this, BukkitData.Location.class));
             if (modDataManager != null && modDataManager.hasAvailableIntegrations()) {
                 registerSerializer(Identifier.MOD_DATA, new BukkitSerializer.ModData(this));
+            }
+            if (solCarrotIntegration != null && solCarrotIntegration.isAvailable()) {
+                registerSerializer(Identifier.SOLCARROT_FOODLIST,
+                        new Serializer.Json<>(this, BukkitData.SolCarrotFoodList.class));
             }
             validateDependencies();
         });
@@ -319,6 +329,11 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     @Override
     public Optional<ModDataProvider> getModDataProvider() {
         return Optional.ofNullable(modDataManager);
+    }
+
+    @Nullable
+    public SolCarrotIntegration getSolCarrotIntegration() {
+        return solCarrotIntegration;
     }
 
     @Override

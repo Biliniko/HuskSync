@@ -67,10 +67,14 @@ public class ForgeEventBridge {
                     return;
                 }
                 final ModDataManager manager = plugin.getModDataManager();
-                if (manager == null || !manager.hasAvailableIntegrations()) {
-                    return;
+                if (manager != null && manager.hasAvailableIntegrations()) {
+                    manager.cachePlayerModData(player);
                 }
-                manager.cachePlayerModData(player);
+
+                final SolCarrotIntegration solCarrot = plugin.getSolCarrotIntegration();
+                if (solCarrot != null) {
+                    solCarrot.cachePlayerData(player);
+                }
             };
 
             addListener.invoke(eventBus, normalPriority, false, logoutEvent, listener);

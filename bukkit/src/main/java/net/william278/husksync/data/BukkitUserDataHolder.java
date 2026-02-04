@@ -22,6 +22,7 @@ package net.william278.husksync.data;
 import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.maps.BukkitMapHandler;
 import net.william278.husksync.mod.ModDataManager;
+import net.william278.husksync.mod.SolCarrotIntegration;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.PlayerInventory;
 import org.jetbrains.annotations.NotNull;
@@ -58,6 +59,14 @@ public interface BukkitUserDataHolder extends UserDataHolder {
                         yield Optional.empty();
                     }
                     yield Optional.of(manager.capture(getPlayer()));
+                }
+                case "solcarrot_foodlist" -> {
+                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
+                    final SolCarrotIntegration integration = plugin.getSolCarrotIntegration();
+                    if (integration == null || !integration.isAvailable()) {
+                        yield Optional.empty();
+                    }
+                    yield integration.capture(getPlayer()).map(BukkitData.SolCarrotFoodList::from);
                 }
                 default -> throw new IllegalStateException(String.format("Unexpected data type: %s", id));
             };
