@@ -129,7 +129,8 @@ public abstract class PluginCommand extends Command {
         HUSKSYNC_COMMAND(HuskSyncCommand::new),
         USERDATA_COMMAND(UserDataCommand::new),
         INVENTORY_COMMAND(InventoryCommand::new),
-        ENDER_CHEST_COMMAND(EnderChestCommand::new);
+        ENDER_CHEST_COMMAND(EnderChestCommand::new),
+        MODINV_COMMAND(ModInventoryCommand::new);
 
         public final Function<HuskSync, PluginCommand> commandSupplier;
 

@@ -36,6 +36,7 @@ import net.william278.husksync.data.SerializerRegistry;
 import net.william278.husksync.database.Database;
 import net.william278.husksync.event.EventDispatcher;
 import net.william278.husksync.listener.LockedHandler;
+import net.william278.husksync.mod.ModDataProvider;
 import net.william278.husksync.migrator.Migrator;
 import net.william278.husksync.redis.RedisManager;
 import net.william278.husksync.sync.DataSyncer;
@@ -129,6 +130,16 @@ public interface HuskSync extends Task.Supplier, EventDispatcher, ConfigProvider
      */
     @NotNull
     List<Migrator> getAvailableMigrators();
+
+    /**
+     * Get the mod data provider for this platform, if available
+     *
+     * @return optional mod data provider
+     */
+    @NotNull
+    default Optional<ModDataProvider> getModDataProvider() {
+        return Optional.empty();
+    }
 
     @NotNull
     Map<UUID, Map<Identifier, Data>> getPlayerCustomDataStore();

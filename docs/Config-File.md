@@ -97,6 +97,7 @@ synchronization:
   auto_pinned_save_causes:
     - INVENTORY_COMMAND
     - ENDERCHEST_COMMAND
+    - MOD_CONTAINER_COMMAND
     - BACKUP_RESTORE
     - LEGACY_MIGRATION
     - MPDB_MIGRATION
@@ -125,6 +126,7 @@ synchronization:
   features:
     inventory: true
     ender_chest: true
+    mod_data: true
     experience: true
     advancements: true
     game_mode: true
@@ -136,6 +138,9 @@ synchronization:
     attributes: true
     persistent_data: true
     location: false
+  # List of mod data integrations to disable (e.g. ['curios'])
+  # Leave empty to enable all available integrations
+  mod_data_disabled_integrations: []
   # Commands which should be blocked before a player has finished syncing (Use * to block all commands)
   blacklisted_commands_while_locked:
     - '*'

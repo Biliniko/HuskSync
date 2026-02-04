@@ -256,6 +256,7 @@ public class Settings {
         private List<String> autoPinnedSaveCauses = List.of(
                 DataSnapshot.SaveCause.INVENTORY_COMMAND.name(),
                 DataSnapshot.SaveCause.ENDERCHEST_COMMAND.name(),
+                DataSnapshot.SaveCause.MOD_CONTAINER_COMMAND.name(),
                 DataSnapshot.SaveCause.BACKUP_RESTORE.name(),
                 DataSnapshot.SaveCause.LEGACY_MIGRATION.name(),
                 DataSnapshot.SaveCause.MPDB_MIGRATION.name()
@@ -309,6 +310,11 @@ public class Settings {
         @Comment({"Which data types to synchronize.", "Docs: https://william278.net/docs/husksync/sync-features"})
         @Getter(AccessLevel.NONE)
         private Map<String, Boolean> features = Identifier.getConfigMap();
+
+        @Comment({"List of mod data integrations to disable (e.g. ['curios'])",
+                "Leave empty to enable all available integrations"})
+        @Getter(AccessLevel.NONE)
+        private List<String> modDataDisabledIntegrations = new ArrayList<>();
 
         @Comment("Commands which should be blocked before a player has finished syncing (Use * to block all commands)")
         private List<String> blacklistedCommandsWhileLocked = new ArrayList<>(List.of("*"));
@@ -373,6 +379,11 @@ public class Settings {
 
         public boolean isFeatureEnabled(@NotNull Identifier id) {
             return id.isCustom() || features.getOrDefault(id.getKeyValue(), id.isEnabledByDefault());
+        }
+
+        public boolean isModIntegrationDisabled(@NotNull String id) {
+            return modDataDisabledIntegrations.stream()
+                    .anyMatch(disabled -> disabled.equalsIgnoreCase(id));
         }
 
         @NotNull

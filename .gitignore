@@ -119,6 +119,10 @@ run/
 /build-output-final/
 /target/
 
+# Generated preprocess/bin outputs
+/bukkit/**/bin/
+/common/bin/
+
 # Don't include generated test suite files
 /test/servers/
 /test/HuskSync

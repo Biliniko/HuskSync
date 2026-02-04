@@ -49,6 +49,9 @@ import net.william278.husksync.hook.PlanHook;
 import net.william278.husksync.listener.BukkitEventListener;
 import net.william278.husksync.listener.LockedHandler;
 import net.william278.husksync.maps.BukkitMapHandler;
+import net.william278.husksync.mod.ForgeEventBridge;
+import net.william278.husksync.mod.ModDataManager;
+import net.william278.husksync.mod.ModDataProvider;
 import net.william278.husksync.migrator.LegacyMigrator;
 import net.william278.husksync.migrator.Migrator;
 import net.william278.husksync.migrator.MpdbMigrator;
@@ -108,6 +111,8 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     private RedisManager redisManager;
     private BukkitEventListener eventListener;
     private DataAdapter dataAdapter;
+    private ModDataManager modDataManager;
+    private ForgeEventBridge forgeEventBridge;
     private DataSyncer dataSyncer;
     private LegacyConverter legacyConverter;
     private AsynchronousScheduler asyncScheduler;
@@ -165,6 +170,16 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
             }
         });
 
+        // Prepare mod data manager
+        initialize("mod data manager", (plugin) -> modDataManager = new ModDataManager(this));
+
+        // Prepare forge mod data event bridge
+        initialize("forge mod data event bridge", (plugin) -> {
+            if (modDataManager != null && modDataManager.hasAvailableIntegrations()) {
+                forgeEventBridge = new ForgeEventBridge(this);
+            }
+        });
+
         // Prepare serializers
         initialize("data serializers", (plugin) -> {
             registerSerializer(Identifier.PERSISTENT_DATA, new BukkitSerializer.PersistentData(this));
@@ -180,6 +195,9 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
             registerSerializer(Identifier.HUNGER, new Serializer.Json<>(this, BukkitData.Hunger.class));
             registerSerializer(Identifier.EXPERIENCE, new Serializer.Json<>(this, BukkitData.Experience.class));
             registerSerializer(Identifier.LOCATION, new Serializer.Json<>(this, BukkitData.Location.class));
+            if (modDataManager != null && modDataManager.hasAvailableIntegrations()) {
+                registerSerializer(Identifier.MOD_DATA, new BukkitSerializer.ModData(this));
+            }
             validateDependencies();
         });
 
@@ -295,6 +313,12 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
                 user.getUuid(),
                 (uuid, data) -> data == null ? Maps.newHashMap() : data
         );
+    }
+
+    @NotNull
+    @Override
+    public Optional<ModDataProvider> getModDataProvider() {
+        return Optional.ofNullable(modDataManager);
     }
 
     @Override

@@ -21,6 +21,7 @@ package net.william278.husksync.data;
 
 import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.maps.BukkitMapHandler;
+import net.william278.husksync.mod.ModDataManager;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.PlayerInventory;
 import org.jetbrains.annotations.NotNull;
@@ -50,6 +51,14 @@ public interface BukkitUserDataHolder extends UserDataHolder {
                 case "game_mode" -> getGameMode();
                 case "flight_status" -> getFlightStatus();
                 case "persistent_data" -> getPersistentData();
+                case "mod_data" -> {
+                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
+                    final ModDataManager manager = plugin.getModDataManager();
+                    if (manager == null || !manager.hasAvailableIntegrations()) {
+                        yield Optional.empty();
+                    }
+                    yield Optional.of(manager.capture(getPlayer()));
+                }
                 default -> throw new IllegalStateException(String.format("Unexpected data type: %s", id));
             };
         } catch (Throwable e) {

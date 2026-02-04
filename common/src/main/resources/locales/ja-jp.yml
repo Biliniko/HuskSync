@@ -69,3 +69,10 @@ locales:
   userdata_command_description: 'プレイヤーのユーザーデータを表示・管理・復元する'
   inventory_command_description: 'プレイヤーのインベントリを閲覧・編集する'
   enderchest_command_description: 'プレイヤーのエンダーチェストを閲覧・編集する'
+
+  modinv_viewer_menu_title: '&0%1%''s %2%'
+  modinv_viewer_opened: '[Viewing snapshot of](#00fb9a) [%1%](#00fb9a bold)[''s %2% as of ⌚ %3%](#00fb9a)'
+  save_cause_mod_container_command: 'mod container command'
+  error_modinv_unavailable: '[Error:](#ff3300) [No mod container integrations are available on this server.](#ff7e5e)'
+  error_modinv_unknown_type: '[Error:](#ff3300) [Unknown mod container type:](#ff7e5e) [%1%](#ff7e5e bold)'
+  modinv_command_description: 'View & edit a player''s mod containers'

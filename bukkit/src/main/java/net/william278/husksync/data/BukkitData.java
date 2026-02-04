@@ -30,6 +30,7 @@ import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.HuskSync;
 import net.william278.husksync.adapter.Adaptable;
 import net.william278.husksync.config.Settings.SynchronizationSettings.AttributeSettings;
+import net.william278.husksync.mod.ModSlotData;
 import net.william278.husksync.user.BukkitUser;
 import org.bukkit.*;
 import org.bukkit.advancement.AdvancementProgress;
@@ -227,6 +228,30 @@ public abstract class BukkitData implements Data {
                 throw new UnsupportedOperationException("A generic item array cannot be applied to a player");
             }
 
+        }
+
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    public static class ModData extends BukkitData implements Data, Adaptable {
+
+        @SerializedName("integrations")
+        private Map<String, List<ModSlotData>> integrations;
+
+        @NotNull
+        public static BukkitData.ModData from(@NotNull Map<String, List<ModSlotData>> integrations) {
+            return new BukkitData.ModData(integrations);
+        }
+
+        @Override
+        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
+            if (plugin.getModDataManager() == null || integrations == null || integrations.isEmpty()) {
+                return;
+            }
+            plugin.getModDataManager().apply(user.getPlayer(), this);
         }
 
     }

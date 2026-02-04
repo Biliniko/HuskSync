@@ -41,6 +41,7 @@ Data save causes, marked with a 🚩 flag, indicate what caused the data to be s
 - **server shutdown**: Indicates data saved when the server shut down
 - **inventory command**: Indicates data was saved by editing inventory contents via the `/inventory` command
 - **enderchest command**: Indicates data was saved by editing Ender Chest contents via the `/enderchest` command
+- **mod container command**: Indicates data was saved by editing mod container contents via the `/modinv` command
 - **backup restore**: Indicates data was saved by restoring it from a previous version
 - **api**: Indicates data was saved by a call to the HuskSync [[API]]
 - **mpdb migration**: Indicates data was saved from being imported from MySQLPlayerDataBridge (See [[MPDB Migration]])

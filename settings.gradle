@@ -26,7 +26,10 @@ project(":bukkit").with {
     buildFileName = "root.gradle"
 }
 
-file('bukkit').listFiles((FileFilter) ((File file) -> file.isDirectory() && file.name ==~ /(\d+)\.(\d+)(\.(\d+))?/)).each {
+def allowedBukkitVersions = ["1.20.1"] as Set
+file('bukkit').listFiles((FileFilter) ((File file) ->
+        file.isDirectory() && file.name ==~ /(\d+)\.(\d+)(\.(\d+))?/ && allowedBukkitVersions.contains(file.name)
+)).each {
     include("bukkit:$it.name")
     project(":bukkit:$it.name").with {
         projectDir = file("bukkit/${it.name}")
@@ -34,17 +37,4 @@ file('bukkit').listFiles((FileFilter) ((File file) -> file.isDirectory() && file
     }
 }
 
-// Fabric
-include("fabric")
-project(":fabric").with {
-    projectDir = file("fabric/")
-    buildFileName = "root.gradle"
-}
-
-file('fabric').listFiles((FileFilter) ((File file) -> file.isDirectory() && file.name ==~ /(\d+)\.(\d+)(\.(\d+))?/)).each {
-    include("fabric:$it.name")
-    project(":fabric:$it.name").with {
-        projectDir = file("fabric/${it.name}")
-        buildFileName = '../build.gradle'
-    }
-}
+// Fabric (excluded for this build)

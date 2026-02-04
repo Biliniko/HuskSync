@@ -33,6 +33,7 @@ import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.HuskSync;
 import net.william278.husksync.adapter.Adaptable;
 import net.william278.husksync.api.HuskSyncAPI;
+import net.william278.husksync.mod.ModSlotData;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.ApiStatus;
@@ -40,6 +41,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Map;
 
 import static net.william278.husksync.data.BukkitData.Items.Inventory.INVENTORY_SLOT_COUNT;
 import static net.william278.husksync.data.Data.Items.Inventory.HELD_ITEM_SLOT_TAG;
@@ -226,6 +228,29 @@ public class BukkitSerializer {
         @Override
         public String serialize(@NotNull BukkitData.PersistentData element) throws SerializationException {
             return element.getPersistentData().toString();
+        }
+
+    }
+
+    public static class ModData extends BukkitSerializer implements Serializer<BukkitData.ModData> {
+
+        private static final TypeToken<Map<String, List<ModSlotData>>> TYPE = new TypeToken<>() { };
+
+        public ModData(@NotNull HuskSync plugin) {
+            super(plugin);
+        }
+
+        @Override
+        public BukkitData.ModData deserialize(@NotNull String serialized) throws DeserializationException {
+            return BukkitData.ModData.from(
+                    plugin.getGson().fromJson(serialized, TYPE.getType())
+            );
+        }
+
+        @NotNull
+        @Override
+        public String serialize(@NotNull BukkitData.ModData element) throws SerializationException {
+            return plugin.getGson().toJson(element.getIntegrations());
         }
 
     }

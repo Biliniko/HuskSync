@@ -108,5 +108,15 @@ This page contains a table of HuskSync commands and their required permission no
             <td>Edit the contents of a user's current Ender Chest</td>
             <td><code>husksync.command.enderchest.edit</code></td>
         </tr>
+        <!-- /modinv command -->
+        <tr>
+            <td rowspan="2" colspan="2"><code>/modinv</code></td>
+            <td>View a player's mod containers</td>
+            <td><code>husksync.command.modinv</code></td>
+        </tr>
+        <tr>
+            <td>Edit the contents of a player's current mod containers</td>
+            <td><code>husksync.command.modinv.edit</code></td>
+        </tr>
     </tbody>
 </table>

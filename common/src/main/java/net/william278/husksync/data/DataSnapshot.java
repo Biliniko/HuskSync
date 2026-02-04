@@ -891,6 +891,13 @@ public class DataSnapshot {
         public static final SaveCause ENDERCHEST_COMMAND = of("ENDERCHEST_COMMAND");
 
         /**
+         * Indicates data was saved by editing mod container contents via the {@code /modinv} command
+         *
+         * @since 3.9
+         */
+        public static final SaveCause MOD_CONTAINER_COMMAND = of("MOD_CONTAINER_COMMAND");
+
+        /**
          * Indicates data was saved by restoring it from a previous version
          *
          * @since 2.0

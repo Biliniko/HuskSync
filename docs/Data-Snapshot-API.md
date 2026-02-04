@@ -159,6 +159,7 @@ huskSyncAPI.getCurrentData(user).thenAccept(optionalSnapshot -> {
 |----------------------------|--------------------------------------|-----------------------|------------------------|
 | `husksync:inventory`       | User inventories & held item slot    | `#getInventory`       | `#setInventory`        |
 | `husksync:ender_chest`     | User Ender Chests                    | `#getEnderChest`      | `#setEnderChest`       |
+| `husksync:mod_data`        | Mod container data                   | `#getData(Identifier.MOD_DATA)` | `#setData(Identifier.MOD_DATA, Data)` |
 | `husksync:potion_effects`  | User active potion effects           | `#getPotionEffects`   | `#setPotionEffects`    |
 | `husksync:advancements`    | User advancements                    | `#getAdvancements`    | `#setAdvancements`     |
 | `husksync:location`        | User location                        | `#getLocation`        | `#setLocation`         |
