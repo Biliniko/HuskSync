@@ -127,6 +127,10 @@ synchronization:
     inventory: true
     ender_chest: true
     mod_data: true
+    solcarrot_foodlist: true
+    ultimine_ability: true
+    mna_playerdata: true
+    mna_persistent_data: true
     experience: true
     advancements: true
     game_mode: true
@@ -141,6 +145,74 @@ synchronization:
   # List of mod data integrations to disable (e.g. ['curios'])
   # Leave empty to enable all available integrations
   mod_data_disabled_integrations: []
+  # Settings for syncing Mana and Artifice (mna) player data (Forge/Arclight only)
+  mna:
+    # Whether to send MNA sync messages after applying data to ensure client-side visuals update
+    # Disable if you experience plugin conflicts
+    enable_visual_sync: true
+    # Whether to sync Aura capability data
+    sync_aura: true
+    # Whether to sync MAPFX capability data
+    sync_mapfx: true
+    # Persistent NBT sync mode for MNA
+    # OFF disables syncing
+    # SAFE syncs only keys matching include_prefixes (minus exclude_keys)
+    # FULL syncs keys matching include_prefixes plus include_keys (minus exclude_keys)
+    persistent_mode: FULL
+    # Top-level persistent NBT key prefixes to include when persistentMode is SAFE/FULL
+    include_prefixes:
+      - "mna:"
+      - "mna_"
+      - "ma_"
+    # Additional top-level persistent NBT keys to include when persistentMode is FULL
+    # Use this to sync keys that don't match include_prefixes
+    include_keys:
+      - PreventRemoteMovement
+      - bind_wounds_last_pos
+      - bone_armor_set_bonus
+      - boss_arena_notification_cooldown
+      - brambles_distance
+      - brambles_old_x
+      - brambles_old_y
+      - brambles_old_z
+      - cannon_shot
+      - coldDarkPos
+      - council_armor_reflect_counters
+      - council_armor_set_bonus
+      - demon_armor_meteor_jumping
+      - demon_armor_set_bonus
+      - demon_armor_sprint_time
+      - eldrin_flight
+      - entangle_apply
+      - faction_casting_resource_idx
+      - fey_armor_set_bonus
+      - ginvis_disabled_until
+      - hellfiretrident
+      - icarianX
+      - icarianY
+      - icarianZ
+      - last_coffin_boost
+      - last_milk_time
+      - last_shear_time
+      - life_tap_pct
+      - lift_speed
+      - living_bomb_exploded
+      - mana_shield_range
+      - mist_form_speed_remove
+      - possession_left_click_time
+      - return_on_next_arrow_shot
+      - return_stack
+      - warded_notification_cooldown
+      - wingsout
+    # Top-level persistent NBT keys to exclude (never synced, regardless of mode)
+    exclude_keys:
+      - "mna:summon_ids"
+      - "mna:summon_tag"
+      - eldrin_flight_entity_id
+      - mana_shield_source_id
+      - shackles_of_pain_target
+      - posessed_entity_id
+      - mind_controller
   # Commands which should be blocked before a player has finished syncing (Use * to block all commands)
   blacklisted_commands_while_locked:
     - '*'

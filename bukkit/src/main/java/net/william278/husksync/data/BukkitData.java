@@ -31,6 +31,7 @@ import net.william278.husksync.HuskSync;
 import net.william278.husksync.adapter.Adaptable;
 import net.william278.husksync.config.Settings.SynchronizationSettings.AttributeSettings;
 import net.william278.husksync.mod.ModSlotData;
+import net.william278.husksync.mod.MnaIntegration;
 import net.william278.husksync.mod.SolCarrotIntegration;
 import net.william278.husksync.mod.UltimineIntegration;
 import net.william278.husksync.user.BukkitUser;
@@ -309,6 +310,65 @@ public abstract class BukkitData implements Data {
             }
             plugin.debug("Ultimine apply snapshot value=" + canUltimine + " for " + user.getPlayer().getName());
             integration.apply(user.getPlayer(), canUltimine);
+        }
+
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    public static class MnaPlayerData extends BukkitData implements Data, Adaptable {
+
+        @SerializedName("caps_nbt")
+        private String capsNbt;
+
+        @NotNull
+        public static BukkitData.MnaPlayerData from(@NotNull String capsNbt) {
+            return new BukkitData.MnaPlayerData(capsNbt);
+        }
+
+        @Override
+        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
+            if (capsNbt == null || capsNbt.isBlank()) {
+                return;
+            }
+            final MnaIntegration integration = plugin.getMnaIntegration();
+            if (integration == null || !integration.isAvailable()) {
+                plugin.debug("MNA apply skipped (integration unavailable) for " + user.getPlayer().getName());
+                return;
+            }
+            integration.applyCaps(user.getPlayer(), capsNbt);
+        }
+
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    public static class MnaPersistentData extends BukkitData implements Data, Adaptable {
+
+        @SerializedName("nbt")
+        private String nbt;
+
+        @NotNull
+        public static BukkitData.MnaPersistentData from(@NotNull String nbt) {
+            return new BukkitData.MnaPersistentData(nbt);
+        }
+
+        @Override
+        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
+            if (nbt == null || nbt.isBlank()) {
+                return;
+            }
+            final MnaIntegration integration = plugin.getMnaIntegration();
+            if (integration == null || !integration.isAvailable()) {
+                plugin.debug("MNA apply persistent skipped (integration unavailable) for "
+                             + user.getPlayer().getName());
+                return;
+            }
+            integration.applyPersistent(user.getPlayer(), nbt);
         }
 
     }

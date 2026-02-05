@@ -160,6 +160,8 @@ huskSyncAPI.getCurrentData(user).thenAccept(optionalSnapshot -> {
 | `husksync:inventory`       | User inventories & held item slot    | `#getInventory`       | `#setInventory`        |
 | `husksync:ender_chest`     | User Ender Chests                    | `#getEnderChest`      | `#setEnderChest`       |
 | `husksync:mod_data`        | Mod container data                   | `#getData(Identifier.MOD_DATA)` | `#setData(Identifier.MOD_DATA, Data)` |
+| `husksync:mna_playerdata`  | Mana and Artifice player capabilities | `#getData(Identifier.MNA_PLAYERDATA)` | `#setData(Identifier.MNA_PLAYERDATA, Data)` |
+| `husksync:mna_persistent_data` | Mana and Artifice persistent NBT subset | `#getData(Identifier.MNA_PERSISTENT_DATA)` | `#setData(Identifier.MNA_PERSISTENT_DATA, Data)` |
 | `husksync:potion_effects`  | User active potion effects           | `#getPotionEffects`   | `#setPotionEffects`    |
 | `husksync:advancements`    | User advancements                    | `#getAdvancements`    | `#setAdvancements`     |
 | `husksync:location`        | User location                        | `#getLocation`        | `#setLocation`         |

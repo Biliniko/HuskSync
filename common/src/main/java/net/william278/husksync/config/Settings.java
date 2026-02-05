@@ -316,6 +316,94 @@ public class Settings {
         @Getter(AccessLevel.NONE)
         private List<String> modDataDisabledIntegrations = new ArrayList<>();
 
+        @Comment("Settings for syncing Mana and Artifice (mna) player data (Forge/Arclight only)")
+        private MnaSettings mna = new MnaSettings();
+
+        @Getter
+        @Configuration
+        @NoArgsConstructor(access = AccessLevel.PRIVATE)
+        public static class MnaSettings {
+
+            @Comment({"Whether to send MNA sync messages after applying data to ensure client-side visuals update",
+                    "Disable if you experience plugin conflicts"})
+            private boolean enableVisualSync = true;
+
+            @Comment("Whether to sync Aura capability data")
+            private boolean syncAura = true;
+
+            @Comment("Whether to sync MAPFX capability data")
+            private boolean syncMapfx = true;
+
+            @Comment({"Persistent NBT sync mode for MNA",
+                    "OFF disables syncing",
+                    "SAFE syncs only keys matching includePrefixes (minus excludeKeys)",
+                    "FULL syncs keys matching includePrefixes plus includeKeys (minus excludeKeys)"})
+            private PersistentMode persistentMode = PersistentMode.FULL;
+
+            @Comment("Top-level persistent NBT key prefixes to include when persistentMode is SAFE/FULL")
+            private List<String> includePrefixes = new ArrayList<>(List.of("mna:", "mna_", "ma_"));
+
+            @Comment({"Additional top-level persistent NBT keys to include when persistentMode is FULL",
+                    "Use this to sync keys that don't match includePrefixes"})
+            private List<String> includeKeys = new ArrayList<>(List.of(
+                    "PreventRemoteMovement",
+                    "bind_wounds_last_pos",
+                    "bone_armor_set_bonus",
+                    "boss_arena_notification_cooldown",
+                    "brambles_distance",
+                    "brambles_old_x",
+                    "brambles_old_y",
+                    "brambles_old_z",
+                    "cannon_shot",
+                    "coldDarkPos",
+                    "council_armor_reflect_counters",
+                    "council_armor_set_bonus",
+                    "demon_armor_meteor_jumping",
+                    "demon_armor_set_bonus",
+                    "demon_armor_sprint_time",
+                    "eldrin_flight",
+                    "entangle_apply",
+                    "faction_casting_resource_idx",
+                    "fey_armor_set_bonus",
+                    "ginvis_disabled_until",
+                    "hellfiretrident",
+                    "icarianX",
+                    "icarianY",
+                    "icarianZ",
+                    "last_coffin_boost",
+                    "last_milk_time",
+                    "last_shear_time",
+                    "life_tap_pct",
+                    "lift_speed",
+                    "living_bomb_exploded",
+                    "mana_shield_range",
+                    "mist_form_speed_remove",
+                    "possession_left_click_time",
+                    "return_on_next_arrow_shot",
+                    "return_stack",
+                    "warded_notification_cooldown",
+                    "wingsout"
+            ));
+
+            @Comment({"Top-level persistent NBT keys to exclude (never synced, regardless of mode)"})
+            private List<String> excludeKeys = new ArrayList<>(List.of(
+                    "mna:summon_ids",
+                    "mna:summon_tag",
+                    "eldrin_flight_entity_id",
+                    "mana_shield_source_id",
+                    "shackles_of_pain_target",
+                    "posessed_entity_id",
+                    "mind_controller"
+            ));
+
+            public enum PersistentMode {
+                OFF,
+                SAFE,
+                FULL
+            }
+
+        }
+
         @Comment("Commands which should be blocked before a player has finished syncing (Use * to block all commands)")
         private List<String> blacklistedCommandsWhileLocked = new ArrayList<>(List.of("*"));
 

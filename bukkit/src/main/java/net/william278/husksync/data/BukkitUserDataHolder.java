@@ -22,6 +22,7 @@ package net.william278.husksync.data;
 import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.maps.BukkitMapHandler;
 import net.william278.husksync.mod.ModDataManager;
+import net.william278.husksync.mod.MnaIntegration;
 import net.william278.husksync.mod.SolCarrotIntegration;
 import net.william278.husksync.mod.UltimineIntegration;
 import org.bukkit.entity.Player;
@@ -77,6 +78,25 @@ public interface BukkitUserDataHolder extends UserDataHolder {
                         yield Optional.empty();
                     }
                     yield integration.capture(getPlayer()).map(BukkitData.UltimineAbility::from);
+                }
+                case "mna_playerdata" -> {
+                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
+                    final MnaIntegration integration = plugin.getMnaIntegration();
+                    if (integration == null || !integration.isAvailable()) {
+                        plugin.debug("MNA capture skipped (integration unavailable) for " + getPlayer().getName());
+                        yield Optional.empty();
+                    }
+                    yield integration.captureCaps(getPlayer()).map(BukkitData.MnaPlayerData::from);
+                }
+                case "mna_persistent_data" -> {
+                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
+                    final MnaIntegration integration = plugin.getMnaIntegration();
+                    if (integration == null || !integration.isAvailable()) {
+                        plugin.debug("MNA persistent capture skipped (integration unavailable) for "
+                                     + getPlayer().getName());
+                        yield Optional.empty();
+                    }
+                    yield integration.capturePersistent(getPlayer()).map(BukkitData.MnaPersistentData::from);
                 }
                 default -> throw new IllegalStateException(String.format("Unexpected data type: %s", id));
             };

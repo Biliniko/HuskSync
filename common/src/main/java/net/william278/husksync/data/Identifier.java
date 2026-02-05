@@ -59,12 +59,19 @@ public class Identifier implements Comparable<Identifier> {
     );
     public static final Identifier SOLCARROT_FOODLIST = huskSync("solcarrot_foodlist", true);
     public static final Identifier ULTIMINE_ABILITY = huskSync("ultimine_ability", true);
+    public static final Identifier MNA_PLAYERDATA = huskSync("mna_playerdata", true,
+            Dependency.optional("attributes")
+    );
+    public static final Identifier MNA_PERSISTENT_DATA = huskSync("mna_persistent_data", true,
+            Dependency.optional("mna_playerdata")
+    );
     public static final Identifier ATTRIBUTES = huskSync("attributes", true,
             Dependency.optional("inventory"),
             Dependency.optional("potion_effects")
     );
     public static final Identifier HEALTH = huskSync("health", true,
-            Dependency.optional("attributes")
+            Dependency.optional("attributes"),
+            Dependency.optional("mna_playerdata")
     );
     public static final Identifier HUNGER = huskSync("hunger", true,
             Dependency.optional("attributes")
@@ -175,7 +182,8 @@ public class Identifier implements Comparable<Identifier> {
     public static Map<String, Boolean> getConfigMap() {
         return Map.ofEntries(Stream.of(
                         INVENTORY, ENDER_CHEST, POTION_EFFECTS, ADVANCEMENTS, LOCATION, STATISTICS,
-                        HEALTH, HUNGER, ATTRIBUTES, EXPERIENCE, GAME_MODE, FLIGHT_STATUS, PERSISTENT_DATA, MOD_DATA, SOLCARROT_FOODLIST, ULTIMINE_ABILITY
+                        HEALTH, HUNGER, ATTRIBUTES, EXPERIENCE, GAME_MODE, FLIGHT_STATUS, PERSISTENT_DATA,
+                        MOD_DATA, SOLCARROT_FOODLIST, ULTIMINE_ABILITY, MNA_PLAYERDATA, MNA_PERSISTENT_DATA
                 )
                 .map(Identifier::getConfigEntry)
                 .toArray(Map.Entry[]::new));

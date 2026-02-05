@@ -81,6 +81,12 @@ public class ForgeEventBridge {
                     plugin.debug("Ultimine logout pre-cache for " + player.getName());
                     ultimine.cachePlayerData(player);
                 }
+
+                final MnaIntegration mna = plugin.getMnaIntegration();
+                if (mna != null) {
+                    plugin.debug("MNA logout pre-cache for " + player.getName());
+                    mna.cachePlayerData(player);
+                }
             };
 
             addListener.invoke(eventBus, normalPriority, false, logoutEvent, listener);

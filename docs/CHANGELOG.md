@@ -7,4 +7,5 @@
 - Added `mod_data` sync feature flag and mod integration disable list.
 - Added development workflow documentation.
 - Added Ultimine Addition player ability (can_ultimine) sync.
+- Added Mana and Artifice (MNA) player data sync (capabilities and optional Forge persistent NBT) with post-apply dirty/sync dispatch to avoid client desync.
 - Updated command, config, and data snapshot docs for mod data support.
