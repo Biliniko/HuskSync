@@ -30,6 +30,7 @@ import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.HuskSync;
 import net.william278.husksync.adapter.Adaptable;
 import net.william278.husksync.config.Settings.SynchronizationSettings.AttributeSettings;
+import net.william278.husksync.mod.ArsNouveauIntegration;
 import net.william278.husksync.mod.ModSlotData;
 import net.william278.husksync.mod.MnaIntegration;
 import net.william278.husksync.mod.SolCarrotIntegration;
@@ -255,6 +256,66 @@ public abstract class BukkitData implements Data {
                 return;
             }
             plugin.getModDataManager().apply(user.getPlayer(), this);
+        }
+
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    public static class ArsNouveauPlayerData extends BukkitData implements Data, Adaptable {
+
+        @SerializedName("caps_nbt")
+        private String capsNbt;
+
+        @NotNull
+        public static BukkitData.ArsNouveauPlayerData from(@NotNull String capsNbt) {
+            return new BukkitData.ArsNouveauPlayerData(capsNbt);
+        }
+
+        @Override
+        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
+            if (capsNbt == null || capsNbt.isBlank()) {
+                return;
+            }
+            final ArsNouveauIntegration integration = plugin.getArsNouveauIntegration();
+            if (integration == null || !integration.isAvailable()) {
+                plugin.debug("Ars Nouveau apply skipped (integration unavailable) for "
+                             + user.getPlayer().getName());
+                return;
+            }
+            integration.applyCaps(user.getPlayer(), capsNbt);
+        }
+
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    public static class ArsNouveauPersistentData extends BukkitData implements Data, Adaptable {
+
+        @SerializedName("nbt")
+        private String nbt;
+
+        @NotNull
+        public static BukkitData.ArsNouveauPersistentData from(@NotNull String nbt) {
+            return new BukkitData.ArsNouveauPersistentData(nbt);
+        }
+
+        @Override
+        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
+            if (nbt == null || nbt.isBlank()) {
+                return;
+            }
+            final ArsNouveauIntegration integration = plugin.getArsNouveauIntegration();
+            if (integration == null || !integration.isAvailable()) {
+                plugin.debug("Ars Nouveau apply persistent skipped (integration unavailable) for "
+                             + user.getPlayer().getName());
+                return;
+            }
+            integration.applyPersistent(user.getPlayer(), nbt);
         }
 
     }

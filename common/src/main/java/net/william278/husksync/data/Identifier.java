@@ -65,6 +65,14 @@ public class Identifier implements Comparable<Identifier> {
     public static final Identifier MNA_PERSISTENT_DATA = huskSync("mna_persistent_data", true,
             Dependency.optional("mna_playerdata")
     );
+    public static final Identifier ARS_NOUVEAU_PLAYERDATA = huskSync("ars_nouveau_playerdata", true,
+            Dependency.optional("mod_data"),
+            Dependency.optional("attributes")
+    );
+    public static final Identifier ARS_NOUVEAU_PERSISTENT_DATA = huskSync("ars_nouveau_persistent_data", true,
+            Dependency.optional("potion_effects"),
+            Dependency.optional("ars_nouveau_playerdata")
+    );
     public static final Identifier ATTRIBUTES = huskSync("attributes", true,
             Dependency.optional("inventory"),
             Dependency.optional("potion_effects")
@@ -183,7 +191,8 @@ public class Identifier implements Comparable<Identifier> {
         return Map.ofEntries(Stream.of(
                         INVENTORY, ENDER_CHEST, POTION_EFFECTS, ADVANCEMENTS, LOCATION, STATISTICS,
                         HEALTH, HUNGER, ATTRIBUTES, EXPERIENCE, GAME_MODE, FLIGHT_STATUS, PERSISTENT_DATA,
-                        MOD_DATA, SOLCARROT_FOODLIST, ULTIMINE_ABILITY, MNA_PLAYERDATA, MNA_PERSISTENT_DATA
+                        MOD_DATA, SOLCARROT_FOODLIST, ULTIMINE_ABILITY, MNA_PLAYERDATA, MNA_PERSISTENT_DATA,
+                        ARS_NOUVEAU_PLAYERDATA, ARS_NOUVEAU_PERSISTENT_DATA
                 )
                 .map(Identifier::getConfigEntry)
                 .toArray(Map.Entry[]::new));

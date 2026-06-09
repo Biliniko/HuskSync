@@ -21,6 +21,7 @@ package net.william278.husksync.data;
 
 import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.maps.BukkitMapHandler;
+import net.william278.husksync.mod.ArsNouveauIntegration;
 import net.william278.husksync.mod.ModDataManager;
 import net.william278.husksync.mod.MnaIntegration;
 import net.william278.husksync.mod.SolCarrotIntegration;
@@ -97,6 +98,26 @@ public interface BukkitUserDataHolder extends UserDataHolder {
                         yield Optional.empty();
                     }
                     yield integration.capturePersistent(getPlayer()).map(BukkitData.MnaPersistentData::from);
+                }
+                case "ars_nouveau_playerdata" -> {
+                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
+                    final ArsNouveauIntegration integration = plugin.getArsNouveauIntegration();
+                    if (integration == null || !integration.isAvailable()) {
+                        plugin.debug("Ars Nouveau capture skipped (integration unavailable) for "
+                                     + getPlayer().getName());
+                        yield Optional.empty();
+                    }
+                    yield integration.captureCaps(getPlayer()).map(BukkitData.ArsNouveauPlayerData::from);
+                }
+                case "ars_nouveau_persistent_data" -> {
+                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
+                    final ArsNouveauIntegration integration = plugin.getArsNouveauIntegration();
+                    if (integration == null || !integration.isAvailable()) {
+                        plugin.debug("Ars Nouveau persistent capture skipped (integration unavailable) for "
+                                     + getPlayer().getName());
+                        yield Optional.empty();
+                    }
+                    yield integration.capturePersistent(getPlayer()).map(BukkitData.ArsNouveauPersistentData::from);
                 }
                 default -> throw new IllegalStateException(String.format("Unexpected data type: %s", id));
             };

@@ -49,6 +49,7 @@ import net.william278.husksync.hook.PlanHook;
 import net.william278.husksync.listener.BukkitEventListener;
 import net.william278.husksync.listener.LockedHandler;
 import net.william278.husksync.maps.BukkitMapHandler;
+import net.william278.husksync.mod.ArsNouveauIntegration;
 import net.william278.husksync.mod.ForgeEventBridge;
 import net.william278.husksync.mod.ModDataManager;
 import net.william278.husksync.mod.ModDataProvider;
@@ -119,6 +120,7 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     private SolCarrotIntegration solCarrotIntegration;
     private UltimineIntegration ultimineIntegration;
     private MnaIntegration mnaIntegration;
+    private ArsNouveauIntegration arsNouveauIntegration;
     private ForgeEventBridge forgeEventBridge;
     private DataSyncer dataSyncer;
     private LegacyConverter legacyConverter;
@@ -189,12 +191,16 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
         // Prepare Mana and Artifice integration
         initialize("mna integration", (plugin) -> mnaIntegration = new MnaIntegration(this));
 
+        // Prepare Ars Nouveau integration
+        initialize("ars nouveau integration", (plugin) -> arsNouveauIntegration = new ArsNouveauIntegration(this));
+
         // Prepare forge mod data event bridge
         initialize("forge mod data event bridge", (plugin) -> {
             if ((modDataManager != null && modDataManager.hasAvailableIntegrations())
                     || (solCarrotIntegration != null && solCarrotIntegration.isAvailable())
                     || (ultimineIntegration != null && ultimineIntegration.isAvailable())
-                    || (mnaIntegration != null && mnaIntegration.isAvailable())) {
+                    || (mnaIntegration != null && mnaIntegration.isAvailable())
+                    || (arsNouveauIntegration != null && arsNouveauIntegration.isAvailable())) {
                 forgeEventBridge = new ForgeEventBridge(this);
             }
         });
@@ -230,6 +236,12 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
                         new Serializer.Json<>(this, BukkitData.MnaPlayerData.class));
                 registerSerializer(Identifier.MNA_PERSISTENT_DATA,
                         new Serializer.Json<>(this, BukkitData.MnaPersistentData.class));
+            }
+            if (arsNouveauIntegration != null && arsNouveauIntegration.isAvailable()) {
+                registerSerializer(Identifier.ARS_NOUVEAU_PLAYERDATA,
+                        new Serializer.Json<>(this, BukkitData.ArsNouveauPlayerData.class));
+                registerSerializer(Identifier.ARS_NOUVEAU_PERSISTENT_DATA,
+                        new Serializer.Json<>(this, BukkitData.ArsNouveauPersistentData.class));
             }
             validateDependencies();
         });
@@ -367,6 +379,11 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     @Nullable
     public MnaIntegration getMnaIntegration() {
         return mnaIntegration;
+    }
+
+    @Nullable
+    public ArsNouveauIntegration getArsNouveauIntegration() {
+        return arsNouveauIntegration;
     }
 
     @Override

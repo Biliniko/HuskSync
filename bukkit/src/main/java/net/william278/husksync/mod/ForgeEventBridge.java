@@ -87,6 +87,12 @@ public class ForgeEventBridge {
                     plugin.debug("MNA logout pre-cache for " + player.getName());
                     mna.cachePlayerData(player);
                 }
+
+                final ArsNouveauIntegration arsNouveau = plugin.getArsNouveauIntegration();
+                if (arsNouveau != null) {
+                    plugin.debug("Ars Nouveau logout pre-cache for " + player.getName());
+                    arsNouveau.cachePlayerData(player);
+                }
             };
 
             addListener.invoke(eventBus, normalPriority, false, logoutEvent, listener);
