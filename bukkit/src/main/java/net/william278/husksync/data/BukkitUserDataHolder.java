@@ -61,7 +61,13 @@ public interface BukkitUserDataHolder extends UserDataHolder {
                     if (manager == null || !manager.hasAvailableIntegrations()) {
                         yield Optional.empty();
                     }
-                    yield Optional.of(manager.capture(getPlayer()));
+                    final BukkitData.ModData modData = manager.capture(getPlayer());
+                    if (modData.getIntegrations() == null || modData.getIntegrations().isEmpty()) {
+                        plugin.debug("Mod data capture skipped (no trusted integration data) for "
+                                     + getPlayer().getName());
+                        yield Optional.empty();
+                    }
+                    yield Optional.of(modData);
                 }
                 case "solcarrot_foodlist" -> {
                     final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();

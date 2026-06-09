@@ -48,8 +48,10 @@ public class ModDataManager implements ModDataProvider {
 
     private final BukkitHuskSync plugin;
     private final List<ModIntegration> integrations;
-    private static final long CAPTURE_CACHE_TTL_MS = 5000L;
+    private static final long CAPTURE_CACHE_TTL_MS = 30000L;
     private final Map<UUID, Map<String, CachedSlots>> cachedModData = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<String, List<ModSlotData>>> trustedModData = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<String, List<ModSlotData>>> pendingApplyData = new ConcurrentHashMap<>();
 
     private record CachedSlots(@NotNull List<ModSlotData> slots, long timestamp) {
     }
@@ -122,6 +124,15 @@ public class ModDataManager implements ModDataProvider {
             final String id = integration.id();
             try {
                 final List<ModSlotData> captured = integration.capture(player);
+                final Optional<List<ModSlotData>> pending = getPendingIntegration(uuid, id);
+                if (pending.isPresent()) {
+                    if (captured != null && !captured.isEmpty() && slotsEquivalent(captured, pending.get())) {
+                        confirmApplied(uuid, id, captured);
+                    } else {
+                        plugin.debug("Mod data pre-cache kept pending data for integration: " + id);
+                    }
+                    continue;
+                }
                 if (captured == null || captured.isEmpty()) {
                     continue;
                 }
@@ -136,8 +147,28 @@ public class ModDataManager implements ModDataProvider {
         if (slots.isEmpty()) {
             return;
         }
+        final List<ModSlotData> trusted = List.copyOf(slots);
         cachedModData.computeIfAbsent(uuid, ignored -> new ConcurrentHashMap<>())
-                .put(id, new CachedSlots(List.copyOf(slots), System.currentTimeMillis()));
+                .put(id, new CachedSlots(trusted, System.currentTimeMillis()));
+        trustedModData.computeIfAbsent(uuid, ignored -> new ConcurrentHashMap<>()).put(id, trusted);
+    }
+
+    private void markApplyPending(@NotNull UUID uuid, @NotNull String id, @NotNull List<ModSlotData> slots) {
+        if (slots.isEmpty()) {
+            return;
+        }
+        pendingApplyData.computeIfAbsent(uuid, ignored -> new ConcurrentHashMap<>()).put(id, List.copyOf(slots));
+    }
+
+    void confirmApplied(@NotNull UUID uuid, @NotNull String id, @NotNull List<ModSlotData> slots) {
+        final Map<String, List<ModSlotData>> pendingById = pendingApplyData.get(uuid);
+        if (pendingById != null) {
+            pendingById.remove(id);
+            if (pendingById.isEmpty()) {
+                pendingApplyData.remove(uuid);
+            }
+        }
+        cacheIntegration(uuid, id, slots);
     }
 
     @NotNull
@@ -161,6 +192,47 @@ public class ModDataManager implements ModDataProvider {
     }
 
     @NotNull
+    private Optional<List<ModSlotData>> getTrustedIntegration(@NotNull UUID uuid, @NotNull String id) {
+        final Map<String, List<ModSlotData>> trustedById = trustedModData.get(uuid);
+        if (trustedById == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(trustedById.get(id));
+    }
+
+    @NotNull
+    private Optional<List<ModSlotData>> getPendingIntegration(@NotNull UUID uuid, @NotNull String id) {
+        final Map<String, List<ModSlotData>> pendingById = pendingApplyData.get(uuid);
+        if (pendingById == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(pendingById.get(id));
+    }
+
+    private boolean putFallbackData(@NotNull Map<String, List<ModSlotData>> data, @NotNull UUID uuid,
+                                    @NotNull String id, @NotNull String reason) {
+        final Optional<List<ModSlotData>> pending = getPendingIntegration(uuid, id);
+        if (pending.isPresent()) {
+            plugin.debug("Using pending applied mod data for integration: " + id + " (" + reason + ")");
+            data.put(id, pending.get());
+            return true;
+        }
+        final Optional<List<ModSlotData>> cached = getCachedIntegration(uuid, id);
+        if (cached.isPresent()) {
+            plugin.debug("Using cached mod data for integration: " + id + " (" + reason + ")");
+            data.put(id, cached.get());
+            return true;
+        }
+        final Optional<List<ModSlotData>> trusted = getTrustedIntegration(uuid, id);
+        if (trusted.isPresent()) {
+            plugin.debug("Using last trusted mod data for integration: " + id + " (" + reason + ")");
+            data.put(id, trusted.get());
+            return true;
+        }
+        return false;
+    }
+
+    @NotNull
     public BukkitData.ModData capture(@NotNull Player player) {
         final Map<String, List<ModSlotData>> data = new HashMap<>();
         final UUID uuid = player.getUniqueId();
@@ -168,14 +240,25 @@ public class ModDataManager implements ModDataProvider {
             final String id = integration.id();
             try {
                 final List<ModSlotData> captured = integration.capture(player);
+                final Optional<List<ModSlotData>> pending = getPendingIntegration(uuid, id);
+                if (pending.isPresent()) {
+                    if (captured != null && !captured.isEmpty() && slotsEquivalent(captured, pending.get())) {
+                        confirmApplied(uuid, id, captured);
+                        data.put(id, captured);
+                    } else {
+                        putFallbackData(data, uuid, id, "apply pending");
+                    }
+                    continue;
+                }
                 if (captured != null && !captured.isEmpty()) {
                     cacheIntegration(uuid, id, captured);
                     data.put(id, captured);
                     continue;
                 }
-                getCachedIntegration(uuid, id).ifPresent(cached -> data.put(id, cached));
+                putFallbackData(data, uuid, id, "capture empty");
             } catch (Throwable e) {
                 plugin.debug("Failed to capture mod data for integration: " + id, e);
+                putFallbackData(data, uuid, id, "capture failed");
             }
         }
         return BukkitData.ModData.from(data);
@@ -186,8 +269,17 @@ public class ModDataManager implements ModDataProvider {
             return;
         }
         data.getIntegrations().forEach((id, slots) -> getIntegration(id).ifPresent(integration -> {
+            if (slots == null || slots.isEmpty()) {
+                return;
+            }
             try {
-                integration.apply(player, slots);
+                final UUID uuid = player.getUniqueId();
+                markApplyPending(uuid, id, slots);
+                if (integration.apply(player, slots)) {
+                    confirmApplied(uuid, id, slots);
+                } else {
+                    plugin.debug("Mod data apply pending for integration: " + id);
+                }
             } catch (Throwable e) {
                 plugin.debug("Failed to apply mod data for integration: " + id, e);
             }
@@ -262,6 +354,10 @@ public class ModDataManager implements ModDataProvider {
     @NotNull
     private List<ModSlotData> orderedSlots(@NotNull List<ModSlotData> slots) {
         return slots.stream().sorted(SLOT_ORDER).collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private boolean slotsEquivalent(@NotNull List<ModSlotData> first, @NotNull List<ModSlotData> second) {
+        return orderedSlots(first).equals(orderedSlots(second));
     }
 
     @Nullable

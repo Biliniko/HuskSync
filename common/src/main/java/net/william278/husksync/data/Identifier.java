@@ -58,7 +58,9 @@ public class Identifier implements Comparable<Identifier> {
             Dependency.optional("inventory")
     );
     public static final Identifier SOLCARROT_FOODLIST = huskSync("solcarrot_foodlist", true);
-    public static final Identifier ULTIMINE_ABILITY = huskSync("ultimine_ability", true);
+    public static final Identifier ULTIMINE_ABILITY = huskSync("ultimine_ability", true,
+            Dependency.optional("mod_data")
+    );
     public static final Identifier MNA_PLAYERDATA = huskSync("mna_playerdata", true,
             Dependency.optional("attributes")
     );

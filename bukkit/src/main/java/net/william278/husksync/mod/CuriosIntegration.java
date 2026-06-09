@@ -39,6 +39,8 @@ public class CuriosIntegration implements ModIntegration {
     private static final String ANSI_BRIGHT_YELLOW = "\u001B[93m";
     private static final String ANSI_BRIGHT_RED = "\u001B[91m";
     private static final String ANSI_BRIGHT_MAGENTA = "\u001B[95m";
+    private static final int APPLY_RETRY_ATTEMPTS = 8;
+    private static final long APPLY_RETRY_DELAY_TICKS = 5L;
 
     private final BukkitHuskSync plugin;
     private final ModDataManager manager;
@@ -172,19 +174,34 @@ public class CuriosIntegration implements ModIntegration {
     }
 
     @Override
-    public void apply(@NotNull Player player, @NotNull List<ModSlotData> data) {
+    public boolean apply(@NotNull Player player, @NotNull List<ModSlotData> data) {
+        return apply(player, List.copyOf(data), 0);
+    }
+
+    private boolean apply(@NotNull Player player, @NotNull List<ModSlotData> data, int attempt) {
+        if (data.isEmpty() || !player.isOnline() || plugin.isDisabling()) {
+            return false;
+        }
+        if (attempt > 0 && !plugin.isLocked(player.getUniqueId())) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "apply retry skipped")
+                    + " for " + player.getName() + " because the player is no longer locked"));
+            return false;
+        }
+
         final Object curiosHandler = getCuriosHandler(player);
         if (curiosHandler == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "handler missing")
                     + " (apply skipped) for " + player.getName()));
-            return;
+            scheduleApplyRetry(player, data, attempt, "handler missing");
+            return false;
         }
 
         final Map<?, ?> curios = castMap(invoke(curiosHandler, "getCurios"));
         if (curios == null || curios.isEmpty()) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "no curios handlers")
                     + " (apply skipped) for " + player.getName()));
-            return;
+            scheduleApplyRetry(player, data, attempt, "no curios handlers");
+            return false;
         }
 
         final String availableKeys = curios.keySet().stream()
@@ -207,6 +224,7 @@ public class CuriosIntegration implements ModIntegration {
         int skippedMissingKey = 0;
         int skippedNoStacks = 0;
         int skippedOutOfRange = 0;
+        boolean retryableFailure = false;
         for (Map.Entry<String, List<ModSlotData>> entry : bySlot.entrySet()) {
             final boolean cosmetic = entry.getKey().endsWith(COSMETIC_SUFFIX);
             final String slotKey = cosmetic
@@ -215,6 +233,7 @@ public class CuriosIntegration implements ModIntegration {
             final Object stacksHandler = curios.get(slotKey);
             if (stacksHandler == null) {
                 skippedMissingKey++;
+                retryableFailure = true;
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "missing slot key")
                         + " " + slotKey + " for " + player.getName()));
                 continue;
@@ -222,6 +241,7 @@ public class CuriosIntegration implements ModIntegration {
             final Object stacks = invoke(stacksHandler, cosmetic ? "getCosmeticStacks" : "getStacks");
             if (stacks == null) {
                 skippedNoStacks++;
+                retryableFailure = true;
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "missing stacks")
                         + " for " + slotKey + " (cosmetic=" + cosmetic + ")"));
                 continue;
@@ -229,6 +249,7 @@ public class CuriosIntegration implements ModIntegration {
             final Integer slots = (Integer) invoke(stacks, "getSlots");
             if (slots == null || slots <= 0) {
                 skippedNoStacks++;
+                retryableFailure = true;
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "no slots")
                         + " for " + slotKey + " (cosmetic=" + cosmetic + ")"));
                 continue;
@@ -252,6 +273,34 @@ public class CuriosIntegration implements ModIntegration {
                 + ", missingKeys=" + color(ANSI_BRIGHT_YELLOW, String.valueOf(skippedMissingKey))
                 + ", noStacks=" + color(ANSI_BRIGHT_YELLOW, String.valueOf(skippedNoStacks))
                 + ", outOfRange=" + color(ANSI_BRIGHT_YELLOW, String.valueOf(skippedOutOfRange))));
+        if (retryableFailure) {
+            scheduleApplyRetry(player, data, attempt, "slot data unavailable");
+        }
+        return !retryableFailure && skippedOutOfRange == 0;
+    }
+
+    private void scheduleApplyRetry(@NotNull Player player, @NotNull List<ModSlotData> data, int attempt,
+                                    @NotNull String reason) {
+        if (attempt >= APPLY_RETRY_ATTEMPTS || !player.isOnline() || plugin.isDisabling()) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply retry exhausted")
+                    + " for " + player.getName() + " reason=" + reason + " attempts=" + attempt));
+            return;
+        }
+        if (!plugin.isLocked(player.getUniqueId())) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "apply retry not scheduled")
+                    + " for " + player.getName() + " reason=" + reason
+                    + " because the player is no longer locked"));
+            return;
+        }
+
+        final int nextAttempt = attempt + 1;
+        plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "scheduling apply retry")
+                + " for " + player.getName() + " reason=" + reason + " attempt=" + nextAttempt));
+        plugin.runSyncDelayed(() -> {
+            if (apply(player, data, nextAttempt)) {
+                manager.confirmApplied(player.getUniqueId(), id(), data);
+            }
+        }, null, APPLY_RETRY_DELAY_TICKS);
     }
 
     @NotNull

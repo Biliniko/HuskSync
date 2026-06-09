@@ -99,16 +99,18 @@ public class CosmeticArmorIntegration implements ModIntegration {
     }
 
     @Override
-    public void apply(@NotNull Player player, @NotNull List<ModSlotData> data) {
+    public boolean apply(@NotNull Player player, @NotNull List<ModSlotData> data) {
         final Object stacks = getCosArmorStacks(player);
         if (stacks == null) {
-            return;
+            return false;
         }
         final Integer slots = (Integer) invoke(stacks, getSlots);
         final int limit = Math.min(SLOT_COUNT, slots == null || slots <= 0 ? SLOT_COUNT : slots);
         final Set<String> hiddenFlags = extractHiddenFlags(data);
+        boolean success = true;
         for (ModSlotData slot : data) {
             if (slot.slotIndex() < 0 || slot.slotIndex() >= limit) {
+                success = false;
                 continue;
             }
             final ItemStack bukkitItem = manager.deserializeItem(slot.itemNbt());
@@ -122,6 +124,7 @@ public class CosmeticArmorIntegration implements ModIntegration {
         if (hiddenFlags != null) {
             applyHiddenFlags(stacks, hiddenFlags);
         }
+        return success;
     }
 
     @Nullable

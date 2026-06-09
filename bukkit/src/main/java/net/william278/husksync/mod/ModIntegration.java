@@ -37,6 +37,6 @@ public interface ModIntegration {
     @NotNull
     List<ModSlotData> capture(@NotNull Player player);
 
-    void apply(@NotNull Player player, @NotNull List<ModSlotData> data);
+    boolean apply(@NotNull Player player, @NotNull List<ModSlotData> data);
 
 }

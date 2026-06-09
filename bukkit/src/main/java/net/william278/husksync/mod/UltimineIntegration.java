@@ -37,6 +37,8 @@ public class UltimineIntegration {
     private static final String MOD_ID = "ultimine_addition";
     private static final String SERVICE_CLASS =
             "net.ixdarklord.ultimine_addition.core.forge.ServicePlatformPlayersImpl";
+    private static final String CAPABILITY_PROVIDER_CLASS =
+            "net.ixdarklord.ultimine_addition.common.data.player.forge.PlayerUltimineCapabilityProvider";
     private static final long CAPTURE_CACHE_TTL_MS = 5000L;
 
     private final BukkitHuskSync plugin;
@@ -50,6 +52,8 @@ public class UltimineIntegration {
     private Method getAbility;
     @Nullable
     private Method setAbility;
+    @Nullable
+    private Object playerAbilityCapability;
 
     private record CachedAbility(boolean ability, long timestamp) {
     }
@@ -65,7 +69,7 @@ public class UltimineIntegration {
 
     @NotNull
     public Optional<Boolean> capture(@NotNull Player player) {
-        if (!isAvailable() || getAbility == null) {
+        if (!isAvailable() || (getAbility == null && playerAbilityCapability == null)) {
             plugin.debug("Ultimine capture skipped (integration unavailable) for " + player.getName());
             return Optional.empty();
         }
@@ -91,7 +95,7 @@ public class UltimineIntegration {
     }
 
     public void cachePlayerData(@NotNull Player player) {
-        if (!isAvailable() || getAbility == null) {
+        if (!isAvailable() || (getAbility == null && playerAbilityCapability == null)) {
             plugin.debug("Ultimine pre-cache skipped (integration unavailable) for " + player.getName());
             return;
         }
@@ -113,6 +117,7 @@ public class UltimineIntegration {
         }
         plugin.debug("Ultimine apply value=" + ability + " for " + player.getName());
         invokeStatic(setAbility, nmsPlayer, ability);
+        cache(player.getUniqueId(), ability);
     }
 
     @NotNull
@@ -122,12 +127,53 @@ public class UltimineIntegration {
             plugin.debug("Ultimine " + phase + " failed (nms player null) for " + player.getName());
             return Optional.empty();
         }
+        final Optional<Boolean> capability = captureFromCapability(nmsPlayer, player, phase);
+        if (capability.isPresent()) {
+            return capability;
+        }
+        if (getAbility == null) {
+            plugin.debug("Ultimine " + phase + " failed (capability unavailable) for " + player.getName());
+            return Optional.empty();
+        }
+
         final Object result = invokeStatic(getAbility, nmsPlayer);
         if (result instanceof Boolean value) {
-            plugin.debug("Ultimine " + phase + " ok for " + player.getName());
-            return Optional.of(value);
+            if (!value) {
+                plugin.debug("Ultimine " + phase
+                        + " ignored fallback false (capability unavailable) for " + player.getName());
+                return Optional.empty();
+            }
+            plugin.debug("Ultimine " + phase + " ok via fallback service for " + player.getName());
+            return Optional.of(true);
         }
         plugin.debug("Ultimine " + phase + " failed (result null) for " + player.getName());
+        return Optional.empty();
+    }
+
+    @NotNull
+    private Optional<Boolean> captureFromCapability(@NotNull Object nmsPlayer, @NotNull Player player,
+                                                    @NotNull String phase) {
+        if (playerAbilityCapability == null) {
+            return Optional.empty();
+        }
+
+        Object optional = invoke(nmsPlayer, "getCapability", playerAbilityCapability);
+        Object capability = resolveOptional(optional);
+        if (capability == null) {
+            optional = invoke(nmsPlayer, "getCapability", playerAbilityCapability, null);
+            capability = resolveOptional(optional);
+        }
+        if (capability == null) {
+            plugin.debug("Ultimine " + phase + " failed (capability missing) for " + player.getName());
+            return Optional.empty();
+        }
+
+        final Object result = invoke(capability, "getAbility");
+        if (result instanceof Boolean value) {
+            plugin.debug("Ultimine " + phase + " ok via capability for " + player.getName());
+            return Optional.of(value);
+        }
+        plugin.debug("Ultimine " + phase + " failed (capability value null) for " + player.getName());
         return Optional.empty();
     }
 
@@ -152,9 +198,16 @@ public class UltimineIntegration {
             final Class<?> service = Class.forName(SERVICE_CLASS);
             getAbility = findMethod(service, "isPlayerUltimineCapable", 1);
             setAbility = findMethod(service, "setPlayerUltimineCapability", 2);
-            available = getAbility != null && setAbility != null;
+            try {
+                final Class<?> provider = Class.forName(CAPABILITY_PROVIDER_CLASS);
+                playerAbilityCapability = provider.getField("CAPABILITY").get(null);
+            } catch (Throwable e) {
+                plugin.debug("Ultimine resolve: capability access unavailable", e);
+            }
+            available = setAbility != null && (getAbility != null || playerAbilityCapability != null);
             plugin.debug("Ultimine resolve: getAbility=" + (getAbility != null)
                     + ", setAbility=" + (setAbility != null)
+                    + ", capability=" + (playerAbilityCapability != null)
                     + ", available=" + available);
         } catch (Throwable e) {
             available = false;
@@ -175,6 +228,38 @@ public class UltimineIntegration {
             plugin.debug("Ultimine getHandle failed for " + player.getName(), e);
             return null;
         }
+    }
+
+    @Nullable
+    private Object invoke(@NotNull Object target, @NotNull String methodName, Object... args) {
+        final Method method = findMethod(target.getClass(), methodName, args.length);
+        if (method == null) {
+            return null;
+        }
+        try {
+            if (!method.canAccess(target)) {
+                method.setAccessible(true);
+            }
+            return method.invoke(target, args);
+        } catch (Throwable e) {
+            plugin.debug("Failed to invoke Ultimine method: " + methodName, e);
+            return null;
+        }
+    }
+
+    @Nullable
+    private Object resolveOptional(@Nullable Object optional) {
+        if (optional == null) {
+            return null;
+        }
+        if (optional instanceof Optional<?> opt) {
+            return opt.orElse(null);
+        }
+        final Object resolved = invoke(optional, "resolve");
+        if (resolved instanceof Optional<?> opt) {
+            return opt.orElse(null);
+        }
+        return invoke(optional, "orElse", (Object) null);
     }
 
     @Nullable
