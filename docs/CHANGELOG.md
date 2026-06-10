@@ -3,6 +3,7 @@
 ## 2026-02-04
 - Added mod data synchronization framework with Curios integration (Bukkit/Arclight).
 - Added CosmeticArmorReworked integration and Curios cosmetic slot support.
+- Added native Curios capability payload sync for render visibility and dynamically resized slots.
 - Added `/modinv <type> <player> [version]` to view and edit mod container data.
 - Added `mod_data` sync feature flag and mod integration disable list.
 - Added development workflow documentation.

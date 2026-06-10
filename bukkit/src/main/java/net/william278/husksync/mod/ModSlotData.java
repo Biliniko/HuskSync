@@ -30,8 +30,19 @@ import org.jetbrains.annotations.Nullable;
  * @param itemNbt     serialized item stack NBT, or null if empty
  * @param skinArmor   cosmetic armor skin flag (CosmeticArmorReworked), or null if not applicable
  * @param hiddenFlags hidden render flags (CosmeticArmorReworked), or null if not applicable
+ * @param nativeNbt   serialized native integration NBT payload, or null if not applicable
  */
 public record ModSlotData(@NotNull String slotKey, int slotIndex, @Nullable String itemNbt,
-                          @Nullable Boolean skinArmor, @Nullable java.util.List<String> hiddenFlags) {
+                          @Nullable Boolean skinArmor, @Nullable java.util.List<String> hiddenFlags,
+                          @Nullable String nativeNbt) {
+
+    public ModSlotData(@NotNull String slotKey, int slotIndex, @Nullable String itemNbt,
+                       @Nullable Boolean skinArmor, @Nullable java.util.List<String> hiddenFlags) {
+        this(slotKey, slotIndex, itemNbt, skinArmor, hiddenFlags, null);
+    }
+
+    public boolean isMetadata() {
+        return slotIndex < 0;
+    }
 
 }

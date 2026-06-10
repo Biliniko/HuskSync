@@ -215,7 +215,10 @@ public class ModDataManager implements ModDataProvider {
             return Optional.empty();
         }
 
-        final List<ModSlotData> ordered = orderedSlots(slots);
+        final List<ModSlotData> ordered = orderedItemSlots(slots);
+        if (ordered.isEmpty()) {
+            return Optional.empty();
+        }
         final ItemStack[] contents = new ItemStack[ordered.size()];
         for (int i = 0; i < ordered.size(); i++) {
             contents[i] = deserializeItem(ordered.get(i).itemNbt());
@@ -249,19 +252,33 @@ public class ModDataManager implements ModDataProvider {
 
         final ItemStack[] contents = ((BukkitData.Items) items).getContents();
         final List<ModSlotData> ordered = orderedSlots(slots);
-        for (int i = 0; i < ordered.size() && i < contents.length; i++) {
+        int itemIndex = 0;
+        for (int i = 0; i < ordered.size() && itemIndex < contents.length; i++) {
             final ModSlotData slot = ordered.get(i);
-            ordered.set(i, new ModSlotData(slot.slotKey(), slot.slotIndex(), serializeItem(contents[i]),
-                    slot.skinArmor(), slot.hiddenFlags()));
+            if (slot.isMetadata()) {
+                continue;
+            }
+            ordered.set(i, new ModSlotData(slot.slotKey(), slot.slotIndex(), serializeItem(contents[itemIndex]),
+                    slot.skinArmor(), slot.hiddenFlags(), slot.nativeNbt()));
+            itemIndex++;
         }
 
-        modData.getIntegrations().put(integrationId, ordered);
+        modData.getIntegrations().put(integrationId, ordered.stream()
+                .filter(slot -> !slot.isMetadata())
+                .collect(Collectors.toCollection(ArrayList::new)));
         snapshot.setData(Identifier.MOD_DATA, modData);
     }
 
     @NotNull
     private List<ModSlotData> orderedSlots(@NotNull List<ModSlotData> slots) {
         return slots.stream().sorted(SLOT_ORDER).collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    @NotNull
+    private List<ModSlotData> orderedItemSlots(@NotNull List<ModSlotData> slots) {
+        return orderedSlots(slots).stream()
+                .filter(slot -> !slot.isMetadata())
+                .collect(Collectors.toCollection(ArrayList::new));
     }
 
     @NotNull

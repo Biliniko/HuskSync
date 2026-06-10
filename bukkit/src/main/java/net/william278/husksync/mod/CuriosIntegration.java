@@ -25,8 +25,11 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class CuriosIntegration implements ModIntegration {
@@ -34,6 +37,14 @@ public class CuriosIntegration implements ModIntegration {
     private static final String MOD_ID = "curios";
     private static final String DISPLAY_NAME = "Curios";
     private static final String COSMETIC_SUFFIX = ":cosmetic";
+    private static final String NATIVE_PAYLOAD_SLOT_KEY = "__curios_native__";
+    private static final String TAG_PARSER_CLASS = "net.minecraft.nbt.TagParser";
+    private static final String COMPOUND_TAG_CLASS = "net.minecraft.nbt.CompoundTag";
+    private static final String PACKET_DISTRIBUTOR_CLASS = "net.minecraftforge.network.PacketDistributor";
+    private static final String NETWORK_HANDLER_CLASS = "top.theillusivec4.curios.common.network.NetworkHandler";
+    private static final String SYNC_CURIOS_PACKET_CLASS =
+            "top.theillusivec4.curios.common.network.server.sync.SPacketSyncCurios";
+    private static final String CURIOS_MENU_CLASS = "top.theillusivec4.curios.api.type.ICuriosMenu";
     private static final String ANSI_RESET = "\u001B[0m";
     private static final String ANSI_BRIGHT_CYAN = "\u001B[96m";
     private static final String ANSI_BRIGHT_YELLOW = "\u001B[93m";
@@ -49,7 +60,18 @@ public class CuriosIntegration implements ModIntegration {
     private boolean resolved = false;
     private boolean available = false;
     private Method getCuriosInventory;
+    private Method parseTag;
+    private Method packetDistributorWith;
+    private Constructor<?> syncCuriosPacketConstructor;
+    private Object packetDistributorPlayer;
+    private Class<?> networkHandlerClass;
+    private Class<?> curiosMenuClass;
     private Object curiosInventoryCapability;
+
+    private enum NativeApplyResult {
+        APPLIED,
+        FALLBACK
+    }
 
     public CuriosIntegration(@NotNull BukkitHuskSync plugin, @NotNull ModDataManager manager) {
         this.plugin = plugin;
@@ -102,6 +124,9 @@ public class CuriosIntegration implements ModIntegration {
                 + color(ANSI_BRIGHT_CYAN, captureKeys.isBlank() ? "<none>" : captureKeys)));
 
         final List<ModSlotData> data = new ArrayList<>();
+        captureNativePayload(curiosHandler, player).ifPresent(nativeNbt ->
+                data.add(new ModSlotData(NATIVE_PAYLOAD_SLOT_KEY, -1, null, null, null, nativeNbt))
+        );
         final int slotTypes = curios.size();
         final int[] slotEntries = {0};
         final int[] cosmeticEntries = {0};
@@ -205,13 +230,32 @@ public class CuriosIntegration implements ModIntegration {
             return false;
         }
 
+        final Optional<String> nativePayload = extractNativePayload(data);
+        if (nativePayload.isPresent()) {
+            final NativeApplyResult nativeResult = applyNativePayload(player, curiosHandler, nativePayload.get());
+            if (nativeResult == NativeApplyResult.APPLIED) {
+                return true;
+            }
+            if (itemSlots(data).isEmpty()) {
+                plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "native apply failed")
+                        + " and no legacy slot data is available for " + player.getName()));
+                return false;
+            }
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "falling back to legacy slot apply")
+                    + " for " + player.getName()));
+        }
+
         final String availableKeys = curios.keySet().stream()
                 .filter(String.class::isInstance)
                 .map(Object::toString)
                 .sorted()
                 .collect(Collectors.joining(", "));
 
-        final Map<String, List<ModSlotData>> bySlot = data.stream()
+        final List<ModSlotData> itemData = itemSlots(data);
+        if (itemData.isEmpty()) {
+            return false;
+        }
+        final Map<String, List<ModSlotData>> bySlot = itemData.stream()
                 .collect(Collectors.groupingBy(ModSlotData::slotKey));
         final String incomingKeys = bySlot.keySet().stream()
                 .sorted()
@@ -277,7 +321,208 @@ public class CuriosIntegration implements ModIntegration {
         if (retryableFailure) {
             scheduleApplyRetry(player, data, attempt, "slot data unavailable");
         }
-        return !retryableFailure && skippedOutOfRange == 0;
+        final boolean success = !retryableFailure && skippedOutOfRange == 0;
+        if (success) {
+            syncClient(player, curiosHandler);
+        }
+        return success;
+    }
+
+    @NotNull
+    static Optional<String> extractNativePayload(@NotNull List<ModSlotData> data) {
+        return data.stream()
+                .map(ModSlotData::nativeNbt)
+                .filter(Objects::nonNull)
+                .filter(payload -> !payload.isBlank())
+                .findFirst();
+    }
+
+    @NotNull
+    static List<ModSlotData> itemSlots(@NotNull List<ModSlotData> data) {
+        return data.stream()
+                .filter(slot -> !slot.isMetadata())
+                .toList();
+    }
+
+    @NotNull
+    private Optional<String> captureNativePayload(@NotNull Object curiosHandler, @NotNull Player player) {
+        final Optional<Object> tag = writeNativeTag(curiosHandler, player, "capture native");
+        if (tag.isEmpty()) {
+            return Optional.empty();
+        }
+        final String snbt = tag.get().toString();
+        if (snbt.isBlank() || snbt.equals("{}")) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "native payload empty")
+                    + " for " + player.getName()));
+            return Optional.empty();
+        }
+        plugin.debug(formatDebug("captured native payload for " + player.getName()
+                + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(snbt.length()))));
+        return Optional.of(snbt);
+    }
+
+    @NotNull
+    private NativeApplyResult applyNativePayload(@NotNull Player player, @NotNull Object curiosHandler,
+                                                @NotNull String snbt) {
+        final Object tag = parseCompoundTag(snbt);
+        if (tag == null) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "native apply failed")
+                    + " (parse failed) for " + player.getName()));
+            return NativeApplyResult.FALLBACK;
+        }
+
+        final Optional<Object> backup = writeNativeTag(curiosHandler, player, "apply backup");
+        if (backup.isEmpty()) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "native apply failed")
+                    + " (backup failed) for " + player.getName()));
+            return NativeApplyResult.FALLBACK;
+        }
+
+        if (!readNativeTag(curiosHandler, tag, player, "apply native")) {
+            restoreNativeTag(curiosHandler, backup.get(), player);
+            return NativeApplyResult.FALLBACK;
+        }
+        syncClient(player, curiosHandler);
+        plugin.debug(formatDebug(color(ANSI_BRIGHT_CYAN, "native apply ok")
+                + " for " + player.getName()
+                + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(snbt.length()))));
+        return NativeApplyResult.APPLIED;
+    }
+
+    @NotNull
+    private Optional<Object> writeNativeTag(@NotNull Object curiosHandler, @NotNull Player player,
+                                           @NotNull String phase) {
+        final Method method = reflection.findMethod(curiosHandler.getClass(), "writeTag", 0);
+        if (method == null) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " failed")
+                    + " (writeTag missing) for " + player.getName()));
+            return Optional.empty();
+        }
+        try {
+            if (!method.canAccess(curiosHandler)) {
+                method.setAccessible(true);
+            }
+            return Optional.ofNullable(method.invoke(curiosHandler));
+        } catch (Throwable e) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " failed")
+                    + " (writeTag failed) for " + player.getName()), e);
+            return Optional.empty();
+        }
+    }
+
+    private boolean readNativeTag(@NotNull Object curiosHandler, @NotNull Object tag, @NotNull Player player,
+                                  @NotNull String phase) {
+        final Method method = reflection.findMethod(curiosHandler.getClass(), "readTag", 1);
+        if (method == null) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " failed")
+                    + " (readTag missing) for " + player.getName()));
+            return false;
+        }
+        try {
+            if (!method.canAccess(curiosHandler)) {
+                method.setAccessible(true);
+            }
+            method.invoke(curiosHandler, tag);
+            return true;
+        } catch (Throwable e) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " failed")
+                    + " (readTag failed) for " + player.getName()), e);
+            return false;
+        }
+    }
+
+    private void restoreNativeTag(@NotNull Object curiosHandler, @NotNull Object backupTag, @NotNull Player player) {
+        if (readNativeTag(curiosHandler, backupTag, player, "restore native")) {
+            syncClient(player, curiosHandler);
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "native restore ok")
+                    + " for " + player.getName()));
+        }
+    }
+
+    @Nullable
+    private Object parseCompoundTag(@NotNull String snbt) {
+        if (parseTag == null) {
+            return null;
+        }
+        try {
+            return reflection.invokeStatic(parseTag, snbt);
+        } catch (Throwable e) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "parse native NBT failed")
+                    + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(snbt.length()))), e);
+            return null;
+        }
+    }
+
+    private void syncClient(@NotNull Player player, @NotNull Object curiosHandler) {
+        final Object nmsPlayer = reflection.getHandle(player);
+        if (nmsPlayer == null) {
+            return;
+        }
+        resetOpenMenu(nmsPlayer, player);
+
+        if (networkHandlerClass == null || syncCuriosPacketConstructor == null
+                || packetDistributorPlayer == null || packetDistributorWith == null) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "client sync unavailable")
+                    + " for " + player.getName()));
+            return;
+        }
+
+        final Map<?, ?> curios = castMap(reflection.invoke(curiosHandler, "getCurios"));
+        if (curios == null || curios.isEmpty()) {
+            return;
+        }
+
+        try {
+            final Field instance = networkHandlerClass.getField("INSTANCE");
+            final Object network = instance.get(null);
+            if (network == null) {
+                plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "client sync unavailable")
+                        + " (network null) for " + player.getName()));
+                return;
+            }
+            final Object packet = syncCuriosPacketConstructor.newInstance(player.getEntityId(), curios);
+            if (!packetDistributorWith.canAccess(packetDistributorPlayer)) {
+                packetDistributorWith.setAccessible(true);
+            }
+            final Supplier<Object> playerSupplier = () -> nmsPlayer;
+            final Object target = packetDistributorWith.invoke(packetDistributorPlayer, playerSupplier);
+            final Method send = reflection.findMethod(network.getClass(), "send", 2);
+            if (send == null) {
+                plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "client sync unavailable")
+                        + " (send missing) for " + player.getName()));
+                return;
+            }
+            if (!send.canAccess(network)) {
+                send.setAccessible(true);
+            }
+            send.invoke(network, target, packet);
+        } catch (Throwable e) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "client sync failed")
+                    + " for " + player.getName()), e);
+        }
+    }
+
+    private void resetOpenMenu(@NotNull Object nmsPlayer, @NotNull Player player) {
+        if (curiosMenuClass == null) {
+            return;
+        }
+        final Object menu = readField(nmsPlayer, "containerMenu");
+        if (menu == null || !curiosMenuClass.isInstance(menu)) {
+            return;
+        }
+        final Method resetSlots = reflection.findMethod(menu.getClass(), "resetSlots", 0);
+        if (resetSlots == null) {
+            return;
+        }
+        try {
+            if (!resetSlots.canAccess(menu)) {
+                resetSlots.setAccessible(true);
+            }
+            resetSlots.invoke(menu);
+        } catch (Throwable e) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "menu reset failed")
+                    + " for " + player.getName()), e);
+        }
     }
 
     private void scheduleApplyRetry(@NotNull Player player, @NotNull List<ModSlotData> data, int attempt,
@@ -337,10 +582,66 @@ public class CuriosIntegration implements ModIntegration {
             } catch (Throwable e) {
                 plugin.debug("Curios capability access not available", e);
             }
+            resolveNativeNbt();
+            resolveClientSync();
             available = getCuriosInventory != null || curiosInventoryCapability != null;
         } catch (Throwable e) {
             available = false;
             plugin.debug("Curios integration not available", e);
+        }
+    }
+
+    private void resolveNativeNbt() {
+        try {
+            final Class<?> parserClass = Class.forName(TAG_PARSER_CLASS);
+            final Class<?> compoundTagClass = Class.forName(COMPOUND_TAG_CLASS);
+            parseTag = findTagParser(parserClass, compoundTagClass);
+            plugin.debug(formatDebug("native NBT parseTag="
+                    + color(ANSI_BRIGHT_CYAN, String.valueOf(parseTag != null))));
+        } catch (Throwable e) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "native NBT unavailable")), e);
+        }
+    }
+
+    @Nullable
+    private Method findTagParser(@NotNull Class<?> parserClass, @NotNull Class<?> compoundTagClass) {
+        Method method = reflection.findMethod(parserClass, "parseTag", 1);
+        if (method != null && compoundTagClass.isAssignableFrom(method.getReturnType())) {
+            return method;
+        }
+        method = reflection.findMethod(parserClass, "parse", 1);
+        if (method != null && compoundTagClass.isAssignableFrom(method.getReturnType())) {
+            return method;
+        }
+        for (Method candidate : parserClass.getMethods()) {
+            if (candidate.getParameterCount() == 1
+                    && candidate.getParameterTypes()[0] == String.class
+                    && compoundTagClass.isAssignableFrom(candidate.getReturnType())) {
+                candidate.setAccessible(true);
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private void resolveClientSync() {
+        try {
+            networkHandlerClass = Class.forName(NETWORK_HANDLER_CLASS);
+            final Class<?> syncCuriosPacket = Class.forName(SYNC_CURIOS_PACKET_CLASS);
+            syncCuriosPacketConstructor = syncCuriosPacket.getConstructor(int.class, Map.class);
+            syncCuriosPacketConstructor.setAccessible(true);
+            final Class<?> packetDistributor = Class.forName(PACKET_DISTRIBUTOR_CLASS);
+            packetDistributorPlayer = packetDistributor.getField("PLAYER").get(null);
+            if (packetDistributorPlayer != null) {
+                packetDistributorWith = reflection.findMethod(packetDistributorPlayer.getClass(), "with", 1);
+            }
+            curiosMenuClass = Class.forName(CURIOS_MENU_CLASS);
+            plugin.debug(formatDebug("client sync packet="
+                    + color(ANSI_BRIGHT_CYAN, String.valueOf(syncCuriosPacketConstructor != null))
+                    + ", distributor=" + color(ANSI_BRIGHT_CYAN, String.valueOf(packetDistributorWith != null))
+                    + ", menu=" + color(ANSI_BRIGHT_CYAN, String.valueOf(curiosMenuClass != null))));
+        } catch (Throwable e) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "client sync methods unavailable")), e);
         }
     }
 
@@ -377,6 +678,24 @@ public class CuriosIntegration implements ModIntegration {
     private Map<?, ?> castMap(@Nullable Object map) {
         if (map instanceof Map<?, ?> m) {
             return m;
+        }
+        return null;
+    }
+
+    @Nullable
+    private Object readField(@NotNull Object target, @NotNull String name) {
+        for (Class<?> current = target.getClass(); current != null; current = current.getSuperclass()) {
+            try {
+                final Field field = current.getDeclaredField(name);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (NoSuchFieldException ignored) {
+                // Search superclass
+            } catch (Throwable e) {
+                plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "field read failed")
+                        + " " + current.getName() + "#" + name), e);
+                return null;
+            }
         }
         return null;
     }

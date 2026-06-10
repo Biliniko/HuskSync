@@ -36,7 +36,7 @@ Built-in Forge/Arclight mod sync support is available for selected mods only. Th
 
 | Identifier | Data synced |
 |------------|-------------|
-| `mod_data` | Supported mod item containers, including Curios and CosmeticArmorReworked |
+| `mod_data` | Supported mod item containers, including Curios native slot payloads and CosmeticArmorReworked |
 | `solcarrot_foodlist` | SoL: Carrot food list capability NBT |
 | `ultimine_ability` | Ultimine Addition player ability flag |
 | `mna_playerdata` | Mana and Artifice player capability NBT |
@@ -46,6 +46,8 @@ Built-in Forge/Arclight mod sync support is available for selected mods only. Th
 | `irons_spellbooks_magic_data` | Iron's Spells 'n Spellbooks player magic progression, mana, and cooldown NBT |
 
 Mod data is captured with a defensive lifecycle designed to avoid replacing a valid remote snapshot with local empty data while a Forge capability is still initializing. When a mod value cannot be applied immediately, HuskSync keeps it as pending data until a later capture confirms that the local mod state matches it; pending applied data is not expired by the short capture cache timeout. Dynamic integrations that include values such as mana or cooldown timers may confirm immediately after a successful direct load to avoid stale pending data blocking later progression changes. If a capture temporarily fails, HuskSync will prefer pending, cached, or last trusted data instead of saving an empty value.
+
+Curios data is synchronized using the mod's native capability payload when available, preserving equipped items, cosmetic items, render visibility, slot visibility, and dynamic slot modifiers created by Curios commands. Older item-only snapshots remain readable and are applied through the legacy slot path. No new configuration entry is required beyond keeping the existing `mod_data` feature enabled.
 
 For best results, run the same mod versions on every synchronized server and keep these feature flags enabled on every server where the corresponding mod is installed. If a server does not run a mod, disable that feature on that server instead of allowing it to save empty local data.
 
