@@ -43,8 +43,9 @@ Built-in Forge/Arclight mod sync support is available for selected mods only. Th
 | `mna_persistent_data` | Managed Mana and Artifice persistent NBT subset |
 | `ars_nouveau_playerdata` | Ars Nouveau player capability NBT |
 | `ars_nouveau_persistent_data` | Managed Ars Nouveau persistent NBT subset |
+| `irons_spellbooks_magic_data` | Iron's Spells 'n Spellbooks player magic progression, mana, and cooldown NBT |
 
-Mod data is captured with a defensive lifecycle designed to avoid replacing a valid remote snapshot with local empty data while a Forge capability is still initializing. When a mod value is applied on login, HuskSync keeps it as pending data until a later capture confirms that the local mod state matches it; pending applied data is not expired by the short capture cache timeout. If a capture temporarily fails, HuskSync will prefer pending, cached, or last trusted data instead of saving an empty value.
+Mod data is captured with a defensive lifecycle designed to avoid replacing a valid remote snapshot with local empty data while a Forge capability is still initializing. When a mod value cannot be applied immediately, HuskSync keeps it as pending data until a later capture confirms that the local mod state matches it; pending applied data is not expired by the short capture cache timeout. Dynamic integrations that include values such as mana or cooldown timers may confirm immediately after a successful direct load to avoid stale pending data blocking later progression changes. If a capture temporarily fails, HuskSync will prefer pending, cached, or last trusted data instead of saving an empty value.
 
 For best results, run the same mod versions on every synchronized server and keep these feature flags enabled on every server where the corresponding mod is installed. If a server does not run a mod, disable that feature on that server instead of allowing it to save empty local data.
 

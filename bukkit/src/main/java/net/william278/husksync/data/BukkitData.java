@@ -320,6 +320,30 @@ public abstract class BukkitData implements Data {
     @Setter
     @AllArgsConstructor(access = AccessLevel.PRIVATE)
     @NoArgsConstructor(access = AccessLevel.PRIVATE)
+    public static class IronsSpellbooksMagicData extends BukkitData implements Data, Adaptable {
+
+        @SerializedName("magic_nbt")
+        private String magicNbt;
+
+        @NotNull
+        public static BukkitData.IronsSpellbooksMagicData from(@NotNull String magicNbt) {
+            return new BukkitData.IronsSpellbooksMagicData(magicNbt);
+        }
+
+        @Override
+        public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
+            if (magicNbt == null || magicNbt.isBlank()) {
+                return;
+            }
+            applyModSyncData(Identifier.IRONS_SPELLBOOKS_MAGIC_DATA, user, plugin, this);
+        }
+
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor(access = AccessLevel.PRIVATE)
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     public static class SolCarrotFoodList extends BukkitData implements Data, Adaptable {
 
         @SerializedName("nbt")

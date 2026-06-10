@@ -83,6 +83,13 @@ public class BukkitModSyncRegistry {
                         this::isArsNouveauAvailable,
                         this::captureArsNouveauPersistent,
                         this::applyArsNouveauPersistent
+                ),
+                new Entry<>(
+                        Identifier.IRONS_SPELLBOOKS_MAGIC_DATA,
+                        BukkitData.IronsSpellbooksMagicData.class,
+                        this::isIronsSpellbooksAvailable,
+                        this::captureIronsSpellbooksMagicData,
+                        this::applyIronsSpellbooksMagicData
                 )
         );
     }
@@ -131,6 +138,9 @@ public class BukkitModSyncRegistry {
         }
         if (isArsNouveauAvailable()) {
             cacheArsNouveau(player);
+        }
+        if (isIronsSpellbooksAvailable()) {
+            cacheIronsSpellbooks(player);
         }
     }
 
@@ -296,6 +306,39 @@ public class BukkitModSyncRegistry {
         final ArsNouveauIntegration integration = plugin.getArsNouveauIntegration();
         if (integration != null) {
             plugin.debug("Ars Nouveau logout pre-cache for " + player.getName());
+            integration.cachePlayerData(player);
+        }
+    }
+
+    private boolean isIronsSpellbooksAvailable() {
+        final IronsSpellbooksIntegration integration = plugin.getIronsSpellbooksIntegration();
+        return integration != null && integration.isAvailable();
+    }
+
+    @NotNull
+    private Optional<BukkitData.IronsSpellbooksMagicData> captureIronsSpellbooksMagicData(@NotNull Player player) {
+        final IronsSpellbooksIntegration integration = plugin.getIronsSpellbooksIntegration();
+        if (integration == null || !integration.isAvailable()) {
+            plugin.debug("Iron's Spellbooks capture skipped (integration unavailable) for " + player.getName());
+            return Optional.empty();
+        }
+        return integration.captureMagicData(player).map(BukkitData.IronsSpellbooksMagicData::from);
+    }
+
+    @NotNull
+    private ApplyResult applyIronsSpellbooksMagicData(@NotNull Player player,
+                                                      @NotNull BukkitData.IronsSpellbooksMagicData data) {
+        final IronsSpellbooksIntegration integration = plugin.getIronsSpellbooksIntegration();
+        if (integration == null) {
+            return ApplyResult.skipped("iron's spellbooks integration missing");
+        }
+        return integration.applyMagicData(player, data.getMagicNbt());
+    }
+
+    private void cacheIronsSpellbooks(@NotNull Player player) {
+        final IronsSpellbooksIntegration integration = plugin.getIronsSpellbooksIntegration();
+        if (integration != null) {
+            plugin.debug("Iron's Spellbooks logout pre-cache for " + player.getName());
             integration.cachePlayerData(player);
         }
     }

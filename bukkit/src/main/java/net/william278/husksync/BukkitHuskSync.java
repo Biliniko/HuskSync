@@ -52,6 +52,7 @@ import net.william278.husksync.maps.BukkitMapHandler;
 import net.william278.husksync.mod.ArsNouveauIntegration;
 import net.william278.husksync.mod.BukkitModSyncRegistry;
 import net.william278.husksync.mod.ForgeEventBridge;
+import net.william278.husksync.mod.IronsSpellbooksIntegration;
 import net.william278.husksync.mod.ModDataManager;
 import net.william278.husksync.mod.ModDataProvider;
 import net.william278.husksync.mod.MnaIntegration;
@@ -122,6 +123,7 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     private UltimineIntegration ultimineIntegration;
     private MnaIntegration mnaIntegration;
     private ArsNouveauIntegration arsNouveauIntegration;
+    private IronsSpellbooksIntegration ironsSpellbooksIntegration;
     private BukkitModSyncRegistry modSyncRegistry;
     private ForgeEventBridge forgeEventBridge;
     private DataSyncer dataSyncer;
@@ -195,6 +197,10 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
 
         // Prepare Ars Nouveau integration
         initialize("ars nouveau integration", (plugin) -> arsNouveauIntegration = new ArsNouveauIntegration(this));
+
+        // Prepare Iron's Spells 'n Spellbooks integration
+        initialize("iron's spellbooks integration",
+                (plugin) -> ironsSpellbooksIntegration = new IronsSpellbooksIntegration(this));
 
         // Prepare standalone mod sync registry
         initialize("standalone mod sync registry", (plugin) -> modSyncRegistry = new BukkitModSyncRegistry(this));
@@ -369,6 +375,11 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     @Nullable
     public ArsNouveauIntegration getArsNouveauIntegration() {
         return arsNouveauIntegration;
+    }
+
+    @Nullable
+    public IronsSpellbooksIntegration getIronsSpellbooksIntegration() {
+        return ironsSpellbooksIntegration;
     }
 
     @Nullable

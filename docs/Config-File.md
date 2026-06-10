@@ -133,6 +133,7 @@ synchronization:
     mna_persistent_data: true
     ars_nouveau_playerdata: true
     ars_nouveau_persistent_data: true
+    irons_spellbooks_magic_data: true
     experience: true
     advancements: true
     game_mode: true

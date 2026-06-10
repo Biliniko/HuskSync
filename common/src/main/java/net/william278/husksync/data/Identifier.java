@@ -75,6 +75,10 @@ public class Identifier implements Comparable<Identifier> {
             Dependency.optional("potion_effects"),
             Dependency.optional("ars_nouveau_playerdata")
     );
+    public static final Identifier IRONS_SPELLBOOKS_MAGIC_DATA = huskSync("irons_spellbooks_magic_data", true,
+            Dependency.optional("inventory"),
+            Dependency.optional("attributes")
+    );
     public static final Identifier ATTRIBUTES = huskSync("attributes", true,
             Dependency.optional("inventory"),
             Dependency.optional("potion_effects")
@@ -194,7 +198,7 @@ public class Identifier implements Comparable<Identifier> {
                         INVENTORY, ENDER_CHEST, POTION_EFFECTS, ADVANCEMENTS, LOCATION, STATISTICS,
                         HEALTH, HUNGER, ATTRIBUTES, EXPERIENCE, GAME_MODE, FLIGHT_STATUS, PERSISTENT_DATA,
                         MOD_DATA, SOLCARROT_FOODLIST, ULTIMINE_ABILITY, MNA_PLAYERDATA, MNA_PERSISTENT_DATA,
-                        ARS_NOUVEAU_PLAYERDATA, ARS_NOUVEAU_PERSISTENT_DATA
+                        ARS_NOUVEAU_PLAYERDATA, ARS_NOUVEAU_PERSISTENT_DATA, IRONS_SPELLBOOKS_MAGIC_DATA
                 )
                 .map(Identifier::getConfigEntry)
                 .toArray(Map.Entry[]::new));

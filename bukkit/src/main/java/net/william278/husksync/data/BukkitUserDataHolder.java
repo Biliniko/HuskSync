@@ -67,7 +67,7 @@ public interface BukkitUserDataHolder extends UserDataHolder {
                     yield Optional.of(modData);
                 }
                 case "solcarrot_foodlist", "ultimine_ability", "mna_playerdata", "mna_persistent_data",
-                     "ars_nouveau_playerdata", "ars_nouveau_persistent_data" -> {
+                     "ars_nouveau_playerdata", "ars_nouveau_persistent_data", "irons_spellbooks_magic_data" -> {
                     final BukkitModSyncRegistry registry = ((BukkitHuskSync) getPlugin()).getModSyncRegistry();
                     yield registry == null ? Optional.empty() : registry.capture(id, getPlayer());
                 }
