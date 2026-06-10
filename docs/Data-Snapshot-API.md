@@ -160,8 +160,12 @@ huskSyncAPI.getCurrentData(user).thenAccept(optionalSnapshot -> {
 | `husksync:inventory`       | User inventories & held item slot    | `#getInventory`       | `#setInventory`        |
 | `husksync:ender_chest`     | User Ender Chests                    | `#getEnderChest`      | `#setEnderChest`       |
 | `husksync:mod_data`        | Mod container data                   | `#getData(Identifier.MOD_DATA)` | `#setData(Identifier.MOD_DATA, Data)` |
+| `husksync:solcarrot_foodlist` | SoL: Carrot food list capability NBT | `#getData(Identifier.SOLCARROT_FOODLIST)` | `#setData(Identifier.SOLCARROT_FOODLIST, Data)` |
+| `husksync:ultimine_ability` | Ultimine Addition player ability flag | `#getData(Identifier.ULTIMINE_ABILITY)` | `#setData(Identifier.ULTIMINE_ABILITY, Data)` |
 | `husksync:mna_playerdata`  | Mana and Artifice player capabilities | `#getData(Identifier.MNA_PLAYERDATA)` | `#setData(Identifier.MNA_PLAYERDATA, Data)` |
 | `husksync:mna_persistent_data` | Mana and Artifice persistent NBT subset | `#getData(Identifier.MNA_PERSISTENT_DATA)` | `#setData(Identifier.MNA_PERSISTENT_DATA, Data)` |
+| `husksync:ars_nouveau_playerdata` | Ars Nouveau player capabilities | `#getData(Identifier.ARS_NOUVEAU_PLAYERDATA)` | `#setData(Identifier.ARS_NOUVEAU_PLAYERDATA, Data)` |
+| `husksync:ars_nouveau_persistent_data` | Ars Nouveau persistent NBT subset | `#getData(Identifier.ARS_NOUVEAU_PERSISTENT_DATA)` | `#setData(Identifier.ARS_NOUVEAU_PERSISTENT_DATA, Data)` |
 | `husksync:potion_effects`  | User active potion effects           | `#getPotionEffects`   | `#setPotionEffects`    |
 | `husksync:advancements`    | User advancements                    | `#getAdvancements`    | `#setAdvancements`     |
 | `husksync:location`        | User location                        | `#getLocation`        | `#setLocation`         |

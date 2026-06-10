@@ -20,6 +20,8 @@ You can customise how much data HuskSync saves about a player by [turning each s
 | Statistics                | Player's in-game stats (ESC -> Statistics)                                                  |      ✅       |
 | Location                  | Player's current coordinate position and world (see below)                                  |      ✅       |
 | Persistent Data Container | Custom plugin persistent data key map                                                       |      ✅️      |
+| Mod container data        | Supported Forge/Arclight mod item containers, such as Curios and CosmeticArmorReworked       |      ⚠️      |
+| Mod player data           | Supported Forge/Arclight mod capabilities and managed persistent NBT                         |      ⚠️      |
 | Locked maps               | Maps/treasure maps locked in a cartography table                                            |      ✅       |
 | Unlocked maps             | Regular, unlocked maps/treasure maps ([why?](#map-syncing))                                 |      ❌       |
 | Economy balances          | Vault economy balance. ([why?](#economy-syncing))                                           |      ❌       |
@@ -28,6 +30,23 @@ You can customise how much data HuskSync saves about a player by [turning each s
 * What about SlimeFun, MMOItems, etc.? &ndash; Yes, items created via these plugins should save & sync correctly, but be sure to test thoroughly first. 
 * What about Purpur's custom ender chest resizing feature? &ndash; Yes, this is supported (but make sure it's enabled on _all_ servers!).
 * What do you mean by location syncing? &ndash; This is intended for servers that have mirrored worlds across instances (such as RPG servers). With this enabled, players will be placed at the same coordinates when changing servers.
+
+### Mod data syncing
+Built-in Forge/Arclight mod sync support is available for selected mods only. The currently supported built-in data types are:
+
+| Identifier | Data synced |
+|------------|-------------|
+| `mod_data` | Supported mod item containers, including Curios and CosmeticArmorReworked |
+| `solcarrot_foodlist` | SoL: Carrot food list capability NBT |
+| `ultimine_ability` | Ultimine Addition player ability flag |
+| `mna_playerdata` | Mana and Artifice player capability NBT |
+| `mna_persistent_data` | Managed Mana and Artifice persistent NBT subset |
+| `ars_nouveau_playerdata` | Ars Nouveau player capability NBT |
+| `ars_nouveau_persistent_data` | Managed Ars Nouveau persistent NBT subset |
+
+Mod data is captured with a defensive lifecycle designed to avoid replacing a valid remote snapshot with local empty data while a Forge capability is still initializing. When a mod value is applied on login, HuskSync keeps it as pending data until a later capture confirms that the local mod state matches it; pending applied data is not expired by the short capture cache timeout. If a capture temporarily fails, HuskSync will prefer pending, cached, or last trusted data instead of saving an empty value.
+
+For best results, run the same mod versions on every synchronized server and keep these feature flags enabled on every server where the corresponding mod is installed. If a server does not run a mod, disable that feature on that server instead of allowing it to save empty local data.
 
 ### Map syncing
 Map items are a special case, as their data is not stored in the item itself, but rather in the game world files. In addition to this, their data is dynamic and changes based on the updating of the world, something that can't be tracked across multiple instances. As a result, it's not possible to sync unlocked map items. Locked maps, however, are supported. This works by saving the pixel canvas grid to the map NBT itself, and generating virtual maps on the other servers.

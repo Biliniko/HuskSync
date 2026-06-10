@@ -131,6 +131,8 @@ synchronization:
     ultimine_ability: true
     mna_playerdata: true
     mna_persistent_data: true
+    ars_nouveau_playerdata: true
+    ars_nouveau_persistent_data: true
     experience: true
     advancements: true
     game_mode: true
