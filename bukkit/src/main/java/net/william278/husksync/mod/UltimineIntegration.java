@@ -25,12 +25,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class UltimineIntegration {
 
@@ -39,11 +34,10 @@ public class UltimineIntegration {
             "net.ixdarklord.ultimine_addition.core.forge.ServicePlatformPlayersImpl";
     private static final String CAPABILITY_PROVIDER_CLASS =
             "net.ixdarklord.ultimine_addition.common.data.player.forge.PlayerUltimineCapabilityProvider";
-    private static final long CAPTURE_CACHE_TTL_MS = 5000L;
 
     private final BukkitHuskSync plugin;
-    private final Map<String, Method> methodCache = new HashMap<>();
-    private final Map<UUID, CachedAbility> cachedAbility = new ConcurrentHashMap<>();
+    private final ReflectiveModSupport reflection;
+    private final ModSyncCache<Boolean> abilityCache = new ModSyncCache<>();
 
     private boolean resolved;
     private boolean available;
@@ -55,11 +49,9 @@ public class UltimineIntegration {
     @Nullable
     private Object playerAbilityCapability;
 
-    private record CachedAbility(boolean ability, long timestamp) {
-    }
-
     public UltimineIntegration(@NotNull BukkitHuskSync plugin) {
         this.plugin = plugin;
+        this.reflection = new ReflectiveModSupport(plugin, "Ultimine");
     }
 
     public boolean isAvailable() {
@@ -71,27 +63,15 @@ public class UltimineIntegration {
     public Optional<Boolean> capture(@NotNull Player player) {
         if (!isAvailable() || (getAbility == null && playerAbilityCapability == null)) {
             plugin.debug("Ultimine capture skipped (integration unavailable) for " + player.getName());
-            return Optional.empty();
+            return captureFallback(player, "integration unavailable");
         }
-        final Optional<CachedAbility> cached = getCached(player.getUniqueId());
         if (!player.isOnline()) {
-            if (cached.isPresent()) {
-                cached.ifPresent(entry -> plugin.debug("Ultimine capture using cached data (player offline) ageMs="
-                        + (System.currentTimeMillis() - entry.timestamp()) + " for " + player.getName()));
-                return cached.map(CachedAbility::ability);
-            }
-            plugin.debug("Ultimine capture skipped (player offline, no cache) for " + player.getName());
-            return Optional.empty();
+            return captureFallback(player, "player offline");
         }
         final Optional<Boolean> direct = captureFromHandle(player, "capture");
-        if (direct.isPresent()) {
-            cache(player.getUniqueId(), direct.get());
-            plugin.debug("Ultimine capture direct=" + direct.get() + " for " + player.getName());
-            return direct;
-        }
-        cached.ifPresent(entry -> plugin.debug("Ultimine capture using cached data ageMs="
-                + (System.currentTimeMillis() - entry.timestamp()) + " for " + player.getName()));
-        return cached.map(CachedAbility::ability);
+        final CaptureResult<Boolean> result = abilityCache.capture(player.getUniqueId(), direct, "direct capture failed");
+        logCaptureResult(player, result);
+        return result.dataOptional();
     }
 
     public void cachePlayerData(@NotNull Player player) {
@@ -100,29 +80,32 @@ public class UltimineIntegration {
             return;
         }
         captureFromHandle(player, "pre-cache").ifPresent(ability -> {
-            cache(player.getUniqueId(), ability);
+            abilityCache.storeTrusted(player.getUniqueId(), ability);
             plugin.debug("Ultimine pre-cache stored for " + player.getName() + " value=" + ability);
         });
     }
 
-    public void apply(@NotNull Player player, boolean ability) {
+    @NotNull
+    public ApplyResult apply(@NotNull Player player, boolean ability) {
+        abilityCache.storePending(player.getUniqueId(), ability);
         if (!isAvailable() || setAbility == null) {
             plugin.debug("Ultimine apply skipped (integration unavailable) for " + player.getName());
-            return;
+            return ApplyResult.pending("integration unavailable");
         }
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug("Ultimine apply skipped (nms player null) for " + player.getName());
-            return;
+            return ApplyResult.pending("nms player null");
         }
         plugin.debug("Ultimine apply value=" + ability + " for " + player.getName());
-        invokeStatic(setAbility, nmsPlayer, ability);
-        cache(player.getUniqueId(), ability);
+        reflection.invokeStaticPreferred(setAbility, nmsPlayer, ability);
+        plugin.debug("Ultimine apply pending confirmation for " + player.getName());
+        return ApplyResult.pending("awaiting capture confirmation");
     }
 
     @NotNull
     private Optional<Boolean> captureFromHandle(@NotNull Player player, @NotNull String phase) {
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug("Ultimine " + phase + " failed (nms player null) for " + player.getName());
             return Optional.empty();
@@ -136,7 +119,7 @@ public class UltimineIntegration {
             return Optional.empty();
         }
 
-        final Object result = invokeStatic(getAbility, nmsPlayer);
+        final Object result = reflection.invokeStaticPreferred(getAbility, nmsPlayer);
         if (result instanceof Boolean value) {
             if (!value) {
                 plugin.debug("Ultimine " + phase
@@ -157,18 +140,18 @@ public class UltimineIntegration {
             return Optional.empty();
         }
 
-        Object optional = invoke(nmsPlayer, "getCapability", playerAbilityCapability);
-        Object capability = resolveOptional(optional);
+        Object optional = reflection.invoke(nmsPlayer, "getCapability", playerAbilityCapability);
+        Object capability = reflection.resolveOptional(optional);
         if (capability == null) {
-            optional = invoke(nmsPlayer, "getCapability", playerAbilityCapability, null);
-            capability = resolveOptional(optional);
+            optional = reflection.invoke(nmsPlayer, "getCapability", playerAbilityCapability, null);
+            capability = reflection.resolveOptional(optional);
         }
         if (capability == null) {
             plugin.debug("Ultimine " + phase + " failed (capability missing) for " + player.getName());
             return Optional.empty();
         }
 
-        final Object result = invoke(capability, "getAbility");
+        final Object result = reflection.invoke(capability, "getAbility");
         if (result instanceof Boolean value) {
             plugin.debug("Ultimine " + phase + " ok via capability for " + player.getName());
             return Optional.of(value);
@@ -196,8 +179,8 @@ public class UltimineIntegration {
             plugin.debug("Ultimine resolve: mod loaded (" + MOD_ID + ")");
 
             final Class<?> service = Class.forName(SERVICE_CLASS);
-            getAbility = findMethod(service, "isPlayerUltimineCapable", 1);
-            setAbility = findMethod(service, "setPlayerUltimineCapability", 2);
+            getAbility = reflection.findMethodPreferStatic(service, "isPlayerUltimineCapable", 1);
+            setAbility = reflection.findMethodPreferStatic(service, "setPlayerUltimineCapability", 2);
             try {
                 final Class<?> provider = Class.forName(CAPABILITY_PROVIDER_CLASS);
                 playerAbilityCapability = provider.getField("CAPABILITY").get(null);
@@ -215,124 +198,26 @@ public class UltimineIntegration {
         }
     }
 
-    @Nullable
-    private Object getHandle(@NotNull Player player) {
-        try {
-            final Method method = findMethod(player.getClass(), "getHandle", 0);
-            if (method == null) {
-                plugin.debug("Ultimine getHandle missing for " + player.getName());
-                return null;
-            }
-            return method.invoke(player);
-        } catch (Throwable e) {
-            plugin.debug("Ultimine getHandle failed for " + player.getName(), e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Object invoke(@NotNull Object target, @NotNull String methodName, Object... args) {
-        final Method method = findMethod(target.getClass(), methodName, args.length);
-        if (method == null) {
-            return null;
-        }
-        try {
-            if (!method.canAccess(target)) {
-                method.setAccessible(true);
-            }
-            return method.invoke(target, args);
-        } catch (Throwable e) {
-            plugin.debug("Failed to invoke Ultimine method: " + methodName, e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Object resolveOptional(@Nullable Object optional) {
-        if (optional == null) {
-            return null;
-        }
-        if (optional instanceof Optional<?> opt) {
-            return opt.orElse(null);
-        }
-        final Object resolved = invoke(optional, "resolve");
-        if (resolved instanceof Optional<?> opt) {
-            return opt.orElse(null);
-        }
-        return invoke(optional, "orElse", (Object) null);
-    }
-
-    @Nullable
-    private Object invokeStatic(@Nullable Method method, Object... args) {
-        if (method == null) {
-            return null;
-        }
-        try {
-            final boolean isStatic = Modifier.isStatic(method.getModifiers());
-            final Object target;
-            if (isStatic) {
-                target = null;
-            } else {
-                plugin.debug("Ultimine method is non-static: " + method.getDeclaringClass().getName()
-                        + "#" + method.getName());
-                target = method.getDeclaringClass().getDeclaredConstructor().newInstance();
-            }
-            if (!method.canAccess(target)) {
-                method.setAccessible(true);
-            }
-            return method.invoke(target, args);
-        } catch (Throwable e) {
-            plugin.debug("Failed to invoke Ultimine method: " + method.getName(), e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Method findMethod(@NotNull Class<?> type, @NotNull String name, int params) {
-        final String key = type.getName() + "#" + name + "#" + params;
-        if (methodCache.containsKey(key)) {
-            return methodCache.get(key);
-        }
-        Method fallback = null;
-        for (Method method : type.getMethods()) {
-            if (method.getName().equals(name) && method.getParameterCount() == params) {
-                if (Modifier.isStatic(method.getModifiers())) {
-                    method.setAccessible(true);
-                    methodCache.put(key, method);
-                    return method;
-                }
-                if (fallback == null) {
-                    fallback = method;
-                }
-            }
-        }
-        if (fallback != null) {
-            fallback.setAccessible(true);
-        }
-        methodCache.put(key, fallback);
-        return fallback;
-    }
-
-    private void cache(@NotNull UUID uuid, boolean ability) {
-        cachedAbility.put(uuid, new CachedAbility(ability, System.currentTimeMillis()));
-        plugin.debug("Ultimine cache stored for " + uuid + " value=" + ability);
-    }
-
     @NotNull
-    private Optional<CachedAbility> getCached(@NotNull UUID uuid) {
-        final CachedAbility cached = cachedAbility.get(uuid);
-        if (cached == null) {
-            plugin.debug("Ultimine cache miss for " + uuid);
-            return Optional.empty();
+    private Optional<Boolean> captureFallback(@NotNull Player player, @NotNull String reason) {
+        final CaptureResult<Boolean> result = abilityCache.fallback(player.getUniqueId(), reason);
+        logCaptureResult(player, result);
+        return result.dataOptional();
+    }
+
+    private void logCaptureResult(@NotNull Player player, @NotNull CaptureResult<Boolean> result) {
+        switch (result.status()) {
+            case CAPTURED -> plugin.debug("Ultimine capture direct=" + result.data()
+                    + " for " + player.getName() + " (" + result.reason() + ")");
+            case FALLBACK_PENDING -> plugin.debug("Ultimine capture using pending applied data value=" + result.data()
+                    + " for " + player.getName() + " (" + result.reason() + ")");
+            case FALLBACK_CACHED -> plugin.debug("Ultimine capture using cached data value=" + result.data()
+                    + " for " + player.getName() + " (" + result.reason() + ")");
+            case FALLBACK_TRUSTED -> plugin.debug("Ultimine capture using trusted data value=" + result.data()
+                    + " for " + player.getName() + " (" + result.reason() + ")");
+            case UNAVAILABLE -> plugin.debug("Ultimine capture skipped (no fallback data) for " + player.getName()
+                    + " (" + result.reason() + ")");
         }
-        final long age = System.currentTimeMillis() - cached.timestamp();
-        if (age > CAPTURE_CACHE_TTL_MS) {
-            cachedAbility.remove(uuid);
-            plugin.debug("Ultimine cache expired for " + uuid + " ageMs=" + age);
-            return Optional.empty();
-        }
-        plugin.debug("Ultimine cache hit for " + uuid + " ageMs=" + age);
-        return Optional.of(cached);
     }
 
 }

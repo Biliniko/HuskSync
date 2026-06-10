@@ -30,11 +30,8 @@ import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.HuskSync;
 import net.william278.husksync.adapter.Adaptable;
 import net.william278.husksync.config.Settings.SynchronizationSettings.AttributeSettings;
-import net.william278.husksync.mod.ArsNouveauIntegration;
+import net.william278.husksync.mod.BukkitModSyncRegistry;
 import net.william278.husksync.mod.ModSlotData;
-import net.william278.husksync.mod.MnaIntegration;
-import net.william278.husksync.mod.SolCarrotIntegration;
-import net.william278.husksync.mod.UltimineIntegration;
 import net.william278.husksync.user.BukkitUser;
 import org.bukkit.*;
 import org.bukkit.advancement.AdvancementProgress;
@@ -72,6 +69,17 @@ public abstract class BukkitData implements Data {
     }
 
     public abstract void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException;
+
+    private static void applyModSyncData(@NotNull Identifier identifier, @NotNull BukkitUser user,
+                                         @NotNull BukkitHuskSync plugin, @NotNull Data data) {
+        final BukkitModSyncRegistry registry = plugin.getModSyncRegistry();
+        if (registry == null) {
+            plugin.debug("Mod sync apply skipped (registry unavailable) for " + identifier.getKeyValue()
+                    + " on " + user.getPlayer().getName());
+            return;
+        }
+        registry.apply(identifier, user.getPlayer(), data);
+    }
 
     @Getter
     public static abstract class Items extends BukkitData implements Data.Items {
@@ -279,13 +287,7 @@ public abstract class BukkitData implements Data {
             if (capsNbt == null || capsNbt.isBlank()) {
                 return;
             }
-            final ArsNouveauIntegration integration = plugin.getArsNouveauIntegration();
-            if (integration == null || !integration.isAvailable()) {
-                plugin.debug("Ars Nouveau apply skipped (integration unavailable) for "
-                             + user.getPlayer().getName());
-                return;
-            }
-            integration.applyCaps(user.getPlayer(), capsNbt);
+            applyModSyncData(Identifier.ARS_NOUVEAU_PLAYERDATA, user, plugin, this);
         }
 
     }
@@ -309,13 +311,7 @@ public abstract class BukkitData implements Data {
             if (nbt == null || nbt.isBlank()) {
                 return;
             }
-            final ArsNouveauIntegration integration = plugin.getArsNouveauIntegration();
-            if (integration == null || !integration.isAvailable()) {
-                plugin.debug("Ars Nouveau apply persistent skipped (integration unavailable) for "
-                             + user.getPlayer().getName());
-                return;
-            }
-            integration.applyPersistent(user.getPlayer(), nbt);
+            applyModSyncData(Identifier.ARS_NOUVEAU_PERSISTENT_DATA, user, plugin, this);
         }
 
     }
@@ -339,11 +335,7 @@ public abstract class BukkitData implements Data {
             if (nbt == null || nbt.isBlank()) {
                 return;
             }
-            final SolCarrotIntegration integration = plugin.getSolCarrotIntegration();
-            if (integration == null || !integration.isAvailable()) {
-                return;
-            }
-            integration.apply(user.getPlayer(), nbt);
+            applyModSyncData(Identifier.SOLCARROT_FOODLIST, user, plugin, this);
         }
 
     }
@@ -364,13 +356,7 @@ public abstract class BukkitData implements Data {
 
         @Override
         public void apply(@NotNull BukkitUser user, @NotNull BukkitHuskSync plugin) throws IllegalStateException {
-            final UltimineIntegration integration = plugin.getUltimineIntegration();
-            if (integration == null || !integration.isAvailable()) {
-                plugin.debug("Ultimine apply skipped (integration unavailable) for " + user.getPlayer().getName());
-                return;
-            }
-            plugin.debug("Ultimine apply snapshot value=" + canUltimine + " for " + user.getPlayer().getName());
-            integration.apply(user.getPlayer(), canUltimine);
+            applyModSyncData(Identifier.ULTIMINE_ABILITY, user, plugin, this);
         }
 
     }
@@ -394,12 +380,7 @@ public abstract class BukkitData implements Data {
             if (capsNbt == null || capsNbt.isBlank()) {
                 return;
             }
-            final MnaIntegration integration = plugin.getMnaIntegration();
-            if (integration == null || !integration.isAvailable()) {
-                plugin.debug("MNA apply skipped (integration unavailable) for " + user.getPlayer().getName());
-                return;
-            }
-            integration.applyCaps(user.getPlayer(), capsNbt);
+            applyModSyncData(Identifier.MNA_PLAYERDATA, user, plugin, this);
         }
 
     }
@@ -423,13 +404,7 @@ public abstract class BukkitData implements Data {
             if (nbt == null || nbt.isBlank()) {
                 return;
             }
-            final MnaIntegration integration = plugin.getMnaIntegration();
-            if (integration == null || !integration.isAvailable()) {
-                plugin.debug("MNA apply persistent skipped (integration unavailable) for "
-                             + user.getPlayer().getName());
-                return;
-            }
-            integration.applyPersistent(user.getPlayer(), nbt);
+            applyModSyncData(Identifier.MNA_PERSISTENT_DATA, user, plugin, this);
         }
 
     }

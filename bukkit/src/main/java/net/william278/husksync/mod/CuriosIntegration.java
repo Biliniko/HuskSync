@@ -44,7 +44,7 @@ public class CuriosIntegration implements ModIntegration {
 
     private final BukkitHuskSync plugin;
     private final ModDataManager manager;
-    private final Map<String, Method> methodCache = new HashMap<>();
+    private final ReflectiveModSupport reflection;
 
     private boolean resolved = false;
     private boolean available = false;
@@ -54,6 +54,7 @@ public class CuriosIntegration implements ModIntegration {
     public CuriosIntegration(@NotNull BukkitHuskSync plugin, @NotNull ModDataManager manager) {
         this.plugin = plugin;
         this.manager = manager;
+        this.reflection = new ReflectiveModSupport(plugin, "Curios");
     }
 
     @NotNull
@@ -84,7 +85,7 @@ public class CuriosIntegration implements ModIntegration {
             return List.of();
         }
 
-        final Map<?, ?> curios = castMap(invoke(curiosHandler, "getCurios"));
+        final Map<?, ?> curios = castMap(reflection.invoke(curiosHandler, "getCurios"));
         if (curios == null || curios.isEmpty()) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "no curios handlers")
                     + " (capture skipped) for " + player.getName()));
@@ -111,14 +112,14 @@ public class CuriosIntegration implements ModIntegration {
                 return;
             }
             final Object stacksHandler = value;
-            final Object stacks = invoke(stacksHandler, "getStacks");
+            final Object stacks = reflection.invoke(stacksHandler, "getStacks");
             if (stacks == null) {
                 skippedNoStacks[0]++;
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "missing stacks")
                         + " for " + slotKey + " (capture)"));
                 return;
             }
-            final Integer slots = (Integer) invoke(stacks, "getSlots");
+            final Integer slots = (Integer) reflection.invoke(stacks, "getSlots");
             if (slots == null || slots <= 0) {
                 skippedNoSlots[0]++;
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "no slots")
@@ -126,22 +127,22 @@ public class CuriosIntegration implements ModIntegration {
                 return;
             }
             for (int i = 0; i < slots; i++) {
-                final Object nmsItem = invoke(stacks, "getStackInSlot", i);
+                final Object nmsItem = reflection.invoke(stacks, "getStackInSlot", i);
                 final ItemStack bukkitItem = manager.toBukkitItem(nmsItem);
                 data.add(new ModSlotData(slotKey, i, manager.serializeItem(bukkitItem), null, null));
                 slotEntries[0]++;
             }
 
-            final Boolean hasCosmetic = (Boolean) invoke(stacksHandler, "hasCosmetic");
+            final Boolean hasCosmetic = (Boolean) reflection.invoke(stacksHandler, "hasCosmetic");
             if (Boolean.TRUE.equals(hasCosmetic)) {
-                final Object cosmeticStacks = invoke(stacksHandler, "getCosmeticStacks");
+                final Object cosmeticStacks = reflection.invoke(stacksHandler, "getCosmeticStacks");
                 if (cosmeticStacks == null) {
                     skippedNoStacks[0]++;
                     plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "missing cosmetic stacks")
                             + " for " + slotKey + " (capture)"));
                     return;
                 }
-                final Integer cosmeticSlots = (Integer) invoke(cosmeticStacks, "getSlots");
+                final Integer cosmeticSlots = (Integer) reflection.invoke(cosmeticStacks, "getSlots");
                 if (cosmeticSlots == null || cosmeticSlots <= 0) {
                     skippedNoSlots[0]++;
                     plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "no cosmetic slots")
@@ -149,7 +150,7 @@ public class CuriosIntegration implements ModIntegration {
                     return;
                 }
                 for (int i = 0; i < cosmeticSlots; i++) {
-                    final Object nmsItem = invoke(cosmeticStacks, "getStackInSlot", i);
+                    final Object nmsItem = reflection.invoke(cosmeticStacks, "getStackInSlot", i);
                     final ItemStack bukkitItem = manager.toBukkitItem(nmsItem);
                     data.add(new ModSlotData(slotKey + COSMETIC_SUFFIX, i,
                             manager.serializeItem(bukkitItem), null, null));
@@ -196,7 +197,7 @@ public class CuriosIntegration implements ModIntegration {
             return false;
         }
 
-        final Map<?, ?> curios = castMap(invoke(curiosHandler, "getCurios"));
+        final Map<?, ?> curios = castMap(reflection.invoke(curiosHandler, "getCurios"));
         if (curios == null || curios.isEmpty()) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "no curios handlers")
                     + " (apply skipped) for " + player.getName()));
@@ -238,7 +239,7 @@ public class CuriosIntegration implements ModIntegration {
                         + " " + slotKey + " for " + player.getName()));
                 continue;
             }
-            final Object stacks = invoke(stacksHandler, cosmetic ? "getCosmeticStacks" : "getStacks");
+            final Object stacks = reflection.invoke(stacksHandler, cosmetic ? "getCosmeticStacks" : "getStacks");
             if (stacks == null) {
                 skippedNoStacks++;
                 retryableFailure = true;
@@ -246,7 +247,7 @@ public class CuriosIntegration implements ModIntegration {
                         + " for " + slotKey + " (cosmetic=" + cosmetic + ")"));
                 continue;
             }
-            final Integer slots = (Integer) invoke(stacks, "getSlots");
+            final Integer slots = (Integer) reflection.invoke(stacks, "getSlots");
             if (slots == null || slots <= 0) {
                 skippedNoStacks++;
                 retryableFailure = true;
@@ -263,7 +264,7 @@ public class CuriosIntegration implements ModIntegration {
                 }
                 final ItemStack bukkitItem = manager.deserializeItem(slot.itemNbt());
                 final Object nmsItem = manager.toNmsItem(bukkitItem);
-                invoke(stacks, "setStackInSlot", slot.slotIndex(),
+                reflection.invoke(stacks, "setStackInSlot", slot.slotIndex(),
                         nmsItem == null ? manager.getEmptyNmsItem() : nmsItem);
                 applied++;
             }
@@ -329,7 +330,7 @@ public class CuriosIntegration implements ModIntegration {
             }
 
             final Class<?> curiosApi = Class.forName("top.theillusivec4.curios.api.CuriosApi");
-            getCuriosInventory = findMethod(curiosApi, "getCuriosInventory", 1);
+            getCuriosInventory = reflection.findMethod(curiosApi, "getCuriosInventory", 1);
             try {
                 final Class<?> curiosCapability = Class.forName("top.theillusivec4.curios.api.CuriosCapability");
                 curiosInventoryCapability = curiosCapability.getField("INVENTORY").get(null);
@@ -349,19 +350,19 @@ public class CuriosIntegration implements ModIntegration {
             return null;
         }
         try {
-            final Object handle = player.getClass().getMethod("getHandle").invoke(player);
+            final Object handle = reflection.getHandle(player);
             Object handler = null;
             if (getCuriosInventory != null) {
-                final Object optional = getCuriosInventory.invoke(null, handle);
-                handler = resolveOptional(optional);
+                final Object optional = reflection.invokeStatic(getCuriosInventory, handle);
+                handler = reflection.resolveOptional(optional);
             }
             if (handler == null && curiosInventoryCapability != null) {
-                final Object capability = invoke(handle, "getCapability", curiosInventoryCapability);
-                handler = resolveOptional(capability);
+                final Object capability = reflection.invoke(handle, "getCapability", curiosInventoryCapability);
+                handler = reflection.resolveOptional(capability);
                 if (handler == null) {
-                    final Object sidedCapability = invoke(handle, "getCapability",
+                    final Object sidedCapability = reflection.invoke(handle, "getCapability",
                             curiosInventoryCapability, null);
-                    handler = resolveOptional(sidedCapability);
+                    handler = reflection.resolveOptional(sidedCapability);
                 }
             }
             return handler;
@@ -369,52 +370,6 @@ public class CuriosIntegration implements ModIntegration {
             plugin.debug("Failed to access Curios handler", e);
             return null;
         }
-    }
-
-    @Nullable
-    private Object resolveOptional(@Nullable Object optional) {
-        if (optional == null) {
-            return null;
-        }
-        if (optional instanceof Optional<?> opt) {
-            return opt.orElse(null);
-        }
-        final Object resolved = invoke(optional, "resolve");
-        if (resolved instanceof Optional<?> opt) {
-            return opt.orElse(null);
-        }
-        return invoke(optional, "orElse", (Object) null);
-    }
-
-    @Nullable
-    private Object invoke(@NotNull Object target, @NotNull String methodName, Object... args) {
-        final Method method = findMethod(target.getClass(), methodName, args.length);
-        if (method == null) {
-            return null;
-        }
-        try {
-            return method.invoke(target, args);
-        } catch (Throwable e) {
-            plugin.debug("Failed to invoke Curios method: " + methodName, e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Method findMethod(@NotNull Class<?> type, @NotNull String name, int params) {
-        final String key = type.getName() + "#" + name + "#" + params;
-        if (methodCache.containsKey(key)) {
-            return methodCache.get(key);
-        }
-        for (Method method : type.getMethods()) {
-            if (method.getName().equals(name) && method.getParameterCount() == params) {
-                method.setAccessible(true);
-                methodCache.put(key, method);
-                return method;
-            }
-        }
-        methodCache.put(key, null);
-        return null;
     }
 
     @SuppressWarnings("unchecked")

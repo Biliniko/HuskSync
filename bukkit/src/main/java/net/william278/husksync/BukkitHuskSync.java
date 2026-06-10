@@ -50,6 +50,7 @@ import net.william278.husksync.listener.BukkitEventListener;
 import net.william278.husksync.listener.LockedHandler;
 import net.william278.husksync.maps.BukkitMapHandler;
 import net.william278.husksync.mod.ArsNouveauIntegration;
+import net.william278.husksync.mod.BukkitModSyncRegistry;
 import net.william278.husksync.mod.ForgeEventBridge;
 import net.william278.husksync.mod.ModDataManager;
 import net.william278.husksync.mod.ModDataProvider;
@@ -121,6 +122,7 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     private UltimineIntegration ultimineIntegration;
     private MnaIntegration mnaIntegration;
     private ArsNouveauIntegration arsNouveauIntegration;
+    private BukkitModSyncRegistry modSyncRegistry;
     private ForgeEventBridge forgeEventBridge;
     private DataSyncer dataSyncer;
     private LegacyConverter legacyConverter;
@@ -194,13 +196,13 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
         // Prepare Ars Nouveau integration
         initialize("ars nouveau integration", (plugin) -> arsNouveauIntegration = new ArsNouveauIntegration(this));
 
+        // Prepare standalone mod sync registry
+        initialize("standalone mod sync registry", (plugin) -> modSyncRegistry = new BukkitModSyncRegistry(this));
+
         // Prepare forge mod data event bridge
         initialize("forge mod data event bridge", (plugin) -> {
             if ((modDataManager != null && modDataManager.hasAvailableIntegrations())
-                    || (solCarrotIntegration != null && solCarrotIntegration.isAvailable())
-                    || (ultimineIntegration != null && ultimineIntegration.isAvailable())
-                    || (mnaIntegration != null && mnaIntegration.isAvailable())
-                    || (arsNouveauIntegration != null && arsNouveauIntegration.isAvailable())) {
+                    || (modSyncRegistry != null && modSyncRegistry.hasAvailableIntegrations())) {
                 forgeEventBridge = new ForgeEventBridge(this);
             }
         });
@@ -223,25 +225,8 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
             if (modDataManager != null && modDataManager.hasAvailableIntegrations()) {
                 registerSerializer(Identifier.MOD_DATA, new BukkitSerializer.ModData(this));
             }
-            if (solCarrotIntegration != null && solCarrotIntegration.isAvailable()) {
-                registerSerializer(Identifier.SOLCARROT_FOODLIST,
-                        new Serializer.Json<>(this, BukkitData.SolCarrotFoodList.class));
-            }
-            if (ultimineIntegration != null && ultimineIntegration.isAvailable()) {
-                registerSerializer(Identifier.ULTIMINE_ABILITY,
-                        new Serializer.Json<>(this, BukkitData.UltimineAbility.class));
-            }
-            if (mnaIntegration != null && mnaIntegration.isAvailable()) {
-                registerSerializer(Identifier.MNA_PLAYERDATA,
-                        new Serializer.Json<>(this, BukkitData.MnaPlayerData.class));
-                registerSerializer(Identifier.MNA_PERSISTENT_DATA,
-                        new Serializer.Json<>(this, BukkitData.MnaPersistentData.class));
-            }
-            if (arsNouveauIntegration != null && arsNouveauIntegration.isAvailable()) {
-                registerSerializer(Identifier.ARS_NOUVEAU_PLAYERDATA,
-                        new Serializer.Json<>(this, BukkitData.ArsNouveauPlayerData.class));
-                registerSerializer(Identifier.ARS_NOUVEAU_PERSISTENT_DATA,
-                        new Serializer.Json<>(this, BukkitData.ArsNouveauPersistentData.class));
+            if (modSyncRegistry != null) {
+                modSyncRegistry.registerSerializers();
             }
             validateDependencies();
         });
@@ -384,6 +369,11 @@ public class BukkitHuskSync extends JavaPlugin implements HuskSync, BukkitTask.S
     @Nullable
     public ArsNouveauIntegration getArsNouveauIntegration() {
         return arsNouveauIntegration;
+    }
+
+    @Nullable
+    public BukkitModSyncRegistry getModSyncRegistry() {
+        return modSyncRegistry;
     }
 
     @Override

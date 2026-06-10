@@ -21,11 +21,8 @@ package net.william278.husksync.data;
 
 import net.william278.husksync.BukkitHuskSync;
 import net.william278.husksync.maps.BukkitMapHandler;
-import net.william278.husksync.mod.ArsNouveauIntegration;
+import net.william278.husksync.mod.BukkitModSyncRegistry;
 import net.william278.husksync.mod.ModDataManager;
-import net.william278.husksync.mod.MnaIntegration;
-import net.william278.husksync.mod.SolCarrotIntegration;
-import net.william278.husksync.mod.UltimineIntegration;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.PlayerInventory;
 import org.jetbrains.annotations.NotNull;
@@ -69,61 +66,10 @@ public interface BukkitUserDataHolder extends UserDataHolder {
                     }
                     yield Optional.of(modData);
                 }
-                case "solcarrot_foodlist" -> {
-                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
-                    final SolCarrotIntegration integration = plugin.getSolCarrotIntegration();
-                    if (integration == null || !integration.isAvailable()) {
-                        yield Optional.empty();
-                    }
-                    yield integration.capture(getPlayer()).map(BukkitData.SolCarrotFoodList::from);
-                }
-                case "ultimine_ability" -> {
-                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
-                    final UltimineIntegration integration = plugin.getUltimineIntegration();
-                    if (integration == null || !integration.isAvailable()) {
-                        plugin.debug("Ultimine capture skipped (integration unavailable) for " + getPlayer().getName());
-                        yield Optional.empty();
-                    }
-                    yield integration.capture(getPlayer()).map(BukkitData.UltimineAbility::from);
-                }
-                case "mna_playerdata" -> {
-                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
-                    final MnaIntegration integration = plugin.getMnaIntegration();
-                    if (integration == null || !integration.isAvailable()) {
-                        plugin.debug("MNA capture skipped (integration unavailable) for " + getPlayer().getName());
-                        yield Optional.empty();
-                    }
-                    yield integration.captureCaps(getPlayer()).map(BukkitData.MnaPlayerData::from);
-                }
-                case "mna_persistent_data" -> {
-                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
-                    final MnaIntegration integration = plugin.getMnaIntegration();
-                    if (integration == null || !integration.isAvailable()) {
-                        plugin.debug("MNA persistent capture skipped (integration unavailable) for "
-                                     + getPlayer().getName());
-                        yield Optional.empty();
-                    }
-                    yield integration.capturePersistent(getPlayer()).map(BukkitData.MnaPersistentData::from);
-                }
-                case "ars_nouveau_playerdata" -> {
-                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
-                    final ArsNouveauIntegration integration = plugin.getArsNouveauIntegration();
-                    if (integration == null || !integration.isAvailable()) {
-                        plugin.debug("Ars Nouveau capture skipped (integration unavailable) for "
-                                     + getPlayer().getName());
-                        yield Optional.empty();
-                    }
-                    yield integration.captureCaps(getPlayer()).map(BukkitData.ArsNouveauPlayerData::from);
-                }
-                case "ars_nouveau_persistent_data" -> {
-                    final BukkitHuskSync plugin = (BukkitHuskSync) getPlugin();
-                    final ArsNouveauIntegration integration = plugin.getArsNouveauIntegration();
-                    if (integration == null || !integration.isAvailable()) {
-                        plugin.debug("Ars Nouveau persistent capture skipped (integration unavailable) for "
-                                     + getPlayer().getName());
-                        yield Optional.empty();
-                    }
-                    yield integration.capturePersistent(getPlayer()).map(BukkitData.ArsNouveauPersistentData::from);
+                case "solcarrot_foodlist", "ultimine_ability", "mna_playerdata", "mna_persistent_data",
+                     "ars_nouveau_playerdata", "ars_nouveau_persistent_data" -> {
+                    final BukkitModSyncRegistry registry = ((BukkitHuskSync) getPlugin()).getModSyncRegistry();
+                    yield registry == null ? Optional.empty() : registry.capture(id, getPlayer());
                 }
                 default -> throw new IllegalStateException(String.format("Unexpected data type: %s", id));
             };

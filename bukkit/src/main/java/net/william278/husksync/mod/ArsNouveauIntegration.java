@@ -28,13 +28,10 @@ import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class ArsNouveauIntegration {
 
@@ -57,8 +54,6 @@ public class ArsNouveauIntegration {
     private static final String PERSISTED_FALLBACK_KEY = "PlayerPersisted";
     private static final String PERSISTENT_SCRYER = "an_scryer";
     private static final String PERSISTENT_BOOK = "an_book_";
-    private static final long CAPTURE_CACHE_TTL_MS = 5000L;
-
     private static final String ANSI_RESET = "\u001B[0m";
     private static final String ANSI_BRIGHT_MAGENTA = "\u001B[95m";
     private static final String ANSI_BRIGHT_CYAN = "\u001B[96m";
@@ -67,9 +62,9 @@ public class ArsNouveauIntegration {
     private static final String ANSI_BRIGHT_GREEN = "\u001B[92m";
 
     private final BukkitHuskSync plugin;
-    private final Map<String, Method> methodCache = new HashMap<>();
-    private final Map<UUID, CachedNbt> cachedCaps = new ConcurrentHashMap<>();
-    private final Map<UUID, CachedNbt> cachedPersistent = new ConcurrentHashMap<>();
+    private final ReflectiveModSupport reflection;
+    private final ModSyncCache<String> capsCache = new ModSyncCache<>();
+    private final ModSyncCache<String> persistentCache = new ModSyncCache<>();
 
     private boolean resolved;
     private boolean available;
@@ -93,11 +88,9 @@ public class ArsNouveauIntegration {
     @NotNull
     private String persistedNbtKey = PERSISTED_FALLBACK_KEY;
 
-    private record CachedNbt(@NotNull String snbt, long timestamp) {
-    }
-
     public ArsNouveauIntegration(@NotNull BukkitHuskSync plugin) {
         this.plugin = plugin;
+        this.reflection = new ReflectiveModSupport(plugin, "Ars Nouveau");
     }
 
     public boolean isAvailable() {
@@ -109,9 +102,9 @@ public class ArsNouveauIntegration {
         if (!isAvailable()) {
             return;
         }
-        captureCapsFromHandle(player, "pre-cache").ifPresent(snbt -> cache(cachedCaps, player.getUniqueId(), snbt));
+        captureCapsFromHandle(player, "pre-cache").ifPresent(snbt -> cache(capsCache, player.getUniqueId(), snbt));
         capturePersistentFromHandle(player, "pre-cache")
-                .ifPresent(snbt -> cache(cachedPersistent, player.getUniqueId(), snbt));
+                .ifPresent(snbt -> cache(persistentCache, player.getUniqueId(), snbt));
     }
 
     @NotNull
@@ -119,19 +112,14 @@ public class ArsNouveauIntegration {
         if (!isAvailable() || serializeCaps == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "capture caps skipped")
                     + " (integration unavailable) for " + player.getName()));
-            return Optional.empty();
+            return captureFallback(capsCache, player, "caps", "integration unavailable");
         }
-        final Optional<CachedNbt> cached = getCached(cachedCaps, player.getUniqueId());
         if (!player.isOnline()) {
-            return cached.map(CachedNbt::snbt);
+            return captureFallback(capsCache, player, "caps", "player offline");
         }
 
         final Optional<String> direct = captureCapsFromHandle(player, "capture");
-        if (direct.isPresent()) {
-            cache(cachedCaps, player.getUniqueId(), direct.get());
-            return direct;
-        }
-        return cached.map(CachedNbt::snbt);
+        return capture(capsCache, player, "caps", direct, "direct capture failed");
     }
 
     @NotNull
@@ -139,76 +127,78 @@ public class ArsNouveauIntegration {
         if (!isAvailable() || getPersistentData == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "capture persistent skipped")
                     + " (integration unavailable) for " + player.getName()));
-            return Optional.empty();
+            return captureFallback(persistentCache, player, "persistent", "integration unavailable");
         }
-        final Optional<CachedNbt> cached = getCached(cachedPersistent, player.getUniqueId());
         if (!player.isOnline()) {
-            return cached.map(CachedNbt::snbt);
+            return captureFallback(persistentCache, player, "persistent", "player offline");
         }
 
         final Optional<String> direct = capturePersistentFromHandle(player, "capture");
-        if (direct.isPresent()) {
-            cache(cachedPersistent, player.getUniqueId(), direct.get());
-            return direct;
-        }
-        return cached.map(CachedNbt::snbt);
+        return capture(persistentCache, player, "persistent", direct, "direct capture failed");
     }
 
-    public void applyCaps(@NotNull Player player, @Nullable String snbt) {
-        if (!isAvailable() || deserializeCaps == null) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps skipped")
-                    + " (integration unavailable) for " + player.getName()));
-            return;
-        }
+    @NotNull
+    public ApplyResult applyCaps(@NotNull Player player, @Nullable String snbt) {
         if (snbt == null || snbt.isBlank()) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps skipped")
                     + " (empty NBT) for " + player.getName()));
-            return;
+            return ApplyResult.skipped("empty nbt");
+        }
+        capsCache.storePending(player.getUniqueId(), snbt);
+        if (!isAvailable() || deserializeCaps == null) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps skipped")
+                    + " (integration unavailable) for " + player.getName()));
+            return ApplyResult.pending("integration unavailable");
         }
 
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps failed")
                     + " (nms player null) for " + player.getName()));
-            return;
+            return ApplyResult.pending("nms player null");
         }
 
         final Object tag = parseCompoundTag(snbt);
         if (tag == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps failed")
                     + " (parseTag null) for " + player.getName()));
-            return;
+            return ApplyResult.failed("parseTag null");
         }
 
-        invoke(deserializeCaps, nmsPlayer, tag);
+        reflection.invoke(deserializeCaps, nmsPlayer, tag);
         plugin.debug(formatDebug(color(ANSI_BRIGHT_GREEN, "apply caps ok")
                 + " for " + color(ANSI_BRIGHT_CYAN, player.getName())));
         syncClient(nmsPlayer);
+        plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "apply caps pending confirmation")
+                + " for " + player.getName()));
+        return ApplyResult.pending("awaiting capture confirmation");
     }
 
-    public void applyPersistent(@NotNull Player player, @Nullable String snbt) {
-        if (!isAvailable() || getPersistentData == null) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent skipped")
-                    + " (integration unavailable) for " + player.getName()));
-            return;
-        }
+    @NotNull
+    public ApplyResult applyPersistent(@NotNull Player player, @Nullable String snbt) {
         if (snbt == null || snbt.isBlank()) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent skipped")
                     + " (empty NBT) for " + player.getName()));
-            return;
+            return ApplyResult.skipped("empty nbt");
+        }
+        persistentCache.storePending(player.getUniqueId(), snbt);
+        if (!isAvailable() || getPersistentData == null) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent skipped")
+                    + " (integration unavailable) for " + player.getName()));
+            return ApplyResult.pending("integration unavailable");
         }
 
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent failed")
                     + " (nms player null) for " + player.getName()));
-            return;
+            return ApplyResult.pending("nms player null");
         }
-        final Object persistentData = invoke(getPersistentData, nmsPlayer);
+        final Object persistentData = reflection.invoke(getPersistentData, nmsPlayer);
         if (persistentData == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent failed")
                     + " (persistent data null) for " + player.getName()));
-            return;
+            return ApplyResult.pending("persistent data null");
         }
 
         try {
@@ -227,9 +217,13 @@ public class ArsNouveauIntegration {
                     + " for " + color(ANSI_BRIGHT_CYAN, player.getName())
                     + ", keys=" + color(ANSI_BRIGHT_CYAN, formatKeys(new HashSet<>(targetPersisted.getKeys())))));
             syncPersistentClient(nmsPlayer, targetPersisted);
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "apply persistent pending confirmation")
+                    + " for " + player.getName()));
+            return ApplyResult.pending("awaiting capture confirmation");
         } catch (Throwable e) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent failed")
                     + " for " + player.getName()), e);
+            return ApplyResult.failed("apply failed");
         }
     }
 
@@ -238,14 +232,14 @@ public class ArsNouveauIntegration {
         if (serializeCaps == null) {
             return Optional.empty();
         }
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " caps failed")
                     + " (nms player null) for " + player.getName()));
             return Optional.empty();
         }
 
-        final Object tagObj = invoke(serializeCaps, nmsPlayer);
+        final Object tagObj = reflection.invoke(serializeCaps, nmsPlayer);
         if (tagObj == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " caps failed")
                     + " (serializeCaps returned null) for " + player.getName()));
@@ -276,14 +270,14 @@ public class ArsNouveauIntegration {
         if (getPersistentData == null) {
             return Optional.empty();
         }
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " persistent failed")
                     + " (nms player null) for " + player.getName()));
             return Optional.empty();
         }
 
-        final Object tagObj = invoke(getPersistentData, nmsPlayer);
+        final Object tagObj = reflection.invoke(getPersistentData, nmsPlayer);
         if (tagObj == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " persistent failed")
                     + " (persistent data null) for " + player.getName()));
@@ -336,7 +330,7 @@ public class ArsNouveauIntegration {
             parseTag = findTagParser(parserClass, compoundTagClass);
 
             final Class<?> serverPlayerClass = Class.forName(SERVER_PLAYER_CLASS);
-            serializeCaps = findMethod(serverPlayerClass, "serializeCaps", 0);
+            serializeCaps = reflection.findMethodPreferStatic(serverPlayerClass, "serializeCaps", 0);
             if (serializeCaps != null && !compoundTagClass.isAssignableFrom(serializeCaps.getReturnType())) {
                 serializeCaps = null;
             }
@@ -348,7 +342,7 @@ public class ArsNouveauIntegration {
                                                     + "#" + serializeCaps.getName())));
                 }
             }
-            deserializeCaps = findMethod(serverPlayerClass, "deserializeCaps", 1);
+            deserializeCaps = reflection.findMethodPreferStatic(serverPlayerClass, "deserializeCaps", 1);
             if (deserializeCaps != null && (deserializeCaps.getParameterCount() != 1
                     || !compoundTagClass.isAssignableFrom(deserializeCaps.getParameterTypes()[0]))) {
                 deserializeCaps = null;
@@ -361,7 +355,7 @@ public class ArsNouveauIntegration {
                                                     + "#" + deserializeCaps.getName())));
                 }
             }
-            getPersistentData = findMethod(serverPlayerClass, "getPersistentData", 0);
+            getPersistentData = reflection.findMethodPreferStatic(serverPlayerClass, "getPersistentData", 0);
             if (getPersistentData != null && !compoundTagClass.isAssignableFrom(getPersistentData.getReturnType())) {
                 getPersistentData = null;
             }
@@ -398,16 +392,16 @@ public class ArsNouveauIntegration {
     private void resolveSyncMethods(@NotNull Class<?> serverPlayerClass, @NotNull Class<?> compoundTagClass) {
         try {
             final Class<?> capabilityRegistry = Class.forName(CAPABILITY_REGISTRY_CLASS);
-            syncPlayerCap = findMethod(capabilityRegistry, "syncPlayerCap", 1);
+            syncPlayerCap = reflection.findMethodPreferStatic(capabilityRegistry, "syncPlayerCap", 1);
             final Class<?> manaEvents = Class.forName(MANA_EVENTS_CLASS);
-            syncMana = findMethod(manaEvents, "syncPlayerEvent", 1);
+            syncMana = reflection.findMethodPreferStatic(manaEvents, "syncPlayerEvent", 1);
         } catch (Throwable e) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capability sync methods unavailable")), e);
         }
 
         try {
             final Class<?> networking = Class.forName(NETWORKING_CLASS);
-            sendToPlayerClient = findMethod(networking, "sendToPlayerClient", 2);
+            sendToPlayerClient = reflection.findMethodPreferStatic(networking, "sendToPlayerClient", 2);
             final Class<?> packetClass = Class.forName(PERSISTENT_PACKET_CLASS);
             persistentPacketConstructor = packetClass.getConstructor(compoundTagClass);
         } catch (Throwable e) {
@@ -417,11 +411,11 @@ public class ArsNouveauIntegration {
 
     @Nullable
     private Method findTagParser(@NotNull Class<?> parserClass, @NotNull Class<?> compoundTagClass) {
-        Method method = findMethod(parserClass, "parseTag", 1);
+        Method method = reflection.findMethod(parserClass, "parseTag", 1);
         if (method != null && compoundTagClass.isAssignableFrom(method.getReturnType())) {
             return method;
         }
-        method = findMethod(parserClass, "parse", 1);
+        method = reflection.findMethod(parserClass, "parse", 1);
         if (method != null && compoundTagClass.isAssignableFrom(method.getReturnType())) {
             return method;
         }
@@ -442,74 +436,12 @@ public class ArsNouveauIntegration {
             return null;
         }
         try {
-            return parseTag.invoke(null, snbt);
+            return reflection.invokeStatic(parseTag, snbt);
         } catch (Throwable e) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "parse NBT failed")
                     + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(snbt.length()))), e);
             return null;
         }
-    }
-
-    @Nullable
-    private Object getHandle(@NotNull Player player) {
-        try {
-            final Method method = findMethod(player.getClass(), "getHandle", 0);
-            if (method == null) {
-                plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "getHandle missing")
-                        + " for " + player.getName()));
-                return null;
-            }
-            return method.invoke(player);
-        } catch (Throwable e) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "getHandle failed")
-                    + " for " + player.getName()), e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Object invoke(@Nullable Method method, @Nullable Object target, Object... args) {
-        if (method == null) {
-            return null;
-        }
-        try {
-            if (!method.canAccess(target)) {
-                method.setAccessible(true);
-            }
-            return method.invoke(target, args);
-        } catch (Throwable e) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "method invoke failed")
-                    + " " + method.getDeclaringClass().getName() + "#" + method.getName()), e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Object invokeStatic(@Nullable Method method, Object... args) {
-        return invoke(method, null, args);
-    }
-
-    @Nullable
-    private Method findMethod(@NotNull Class<?> type, @NotNull String name, int params) {
-        final String key = type.getName() + "#" + name + "#" + params;
-        if (methodCache.containsKey(key)) {
-            return methodCache.get(key);
-        }
-        Method fallback = null;
-        for (Method method : type.getMethods()) {
-            if (method.getName().equals(name) && method.getParameterCount() == params) {
-                method.setAccessible(true);
-                if (fallback == null) {
-                    fallback = method;
-                }
-                if (method.getDeclaringClass() == type) {
-                    methodCache.put(key, method);
-                    return method;
-                }
-            }
-        }
-        methodCache.put(key, fallback);
-        return fallback;
     }
 
     @Nullable
@@ -554,8 +486,8 @@ public class ArsNouveauIntegration {
     }
 
     private void syncClient(@NotNull Object nmsPlayer) {
-        invokeStatic(syncPlayerCap, nmsPlayer);
-        invokeStatic(syncMana, nmsPlayer);
+        reflection.invokeStatic(syncPlayerCap, nmsPlayer);
+        reflection.invokeStatic(syncMana, nmsPlayer);
     }
 
     private void syncPersistentClient(@NotNull Object nmsPlayer, @NotNull ReadWriteNBT persistedTag) {
@@ -568,7 +500,7 @@ public class ArsNouveauIntegration {
                 return;
             }
             final Object packet = persistentPacketConstructor.newInstance(tag);
-            invokeStatic(sendToPlayerClient, packet, nmsPlayer);
+            reflection.invokeStatic(sendToPlayerClient, packet, nmsPlayer);
         } catch (Throwable e) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "persistent client sync failed")), e);
         }
@@ -597,21 +529,57 @@ public class ArsNouveauIntegration {
         }
     }
 
-    private void cache(@NotNull Map<UUID, CachedNbt> cache, @NotNull UUID uuid, @NotNull String snbt) {
-        cache.put(uuid, new CachedNbt(snbt, System.currentTimeMillis()));
+    @NotNull
+    private Optional<String> capture(@NotNull ModSyncCache<String> cache, @NotNull Player player,
+                                     @NotNull String type, @NotNull Optional<String> direct,
+                                     @NotNull String unavailableReason) {
+        final CaptureResult<String> result = cache.capture(player.getUniqueId(), direct, unavailableReason);
+        logCaptureResult(type, player, result);
+        return result.dataOptional();
     }
 
     @NotNull
-    private Optional<CachedNbt> getCached(@NotNull Map<UUID, CachedNbt> cache, @NotNull UUID uuid) {
-        final CachedNbt cached = cache.get(uuid);
-        if (cached == null) {
-            return Optional.empty();
+    private Optional<String> captureFallback(@NotNull ModSyncCache<String> cache, @NotNull Player player,
+                                             @NotNull String type, @NotNull String reason) {
+        final CaptureResult<String> result = cache.fallback(player.getUniqueId(), reason);
+        logCaptureResult(type, player, result);
+        return result.dataOptional();
+    }
+
+    private void logCaptureResult(@NotNull String type, @NotNull Player player, @NotNull CaptureResult<String> result) {
+        switch (result.status()) {
+            case CAPTURED -> plugin.debug(formatDebug(color(ANSI_BRIGHT_GREEN, "capture ok")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " for " + color(ANSI_BRIGHT_CYAN, player.getName())
+                    + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(result.data().length()))
+                    + " (" + result.reason() + ")"));
+            case FALLBACK_PENDING -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture using pending")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " for " + player.getName()
+                    + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(result.data().length()))
+                    + " (" + result.reason() + ")"));
+            case FALLBACK_CACHED -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture using cached")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " for " + player.getName()
+                    + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(result.data().length()))
+                    + " (" + result.reason() + ")"));
+            case FALLBACK_TRUSTED -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture using trusted")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " for " + player.getName()
+                    + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(result.data().length()))
+                    + " (" + result.reason() + ")"));
+            case UNAVAILABLE -> plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "capture failed")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " (no fallback data) for " + player.getName()
+                    + " (" + result.reason() + ")"));
         }
-        if (System.currentTimeMillis() - cached.timestamp() > CAPTURE_CACHE_TTL_MS) {
-            cache.remove(uuid);
-            return Optional.empty();
+    }
+
+    private void cache(@NotNull ModSyncCache<String> cache, @NotNull UUID uuid, @NotNull String snbt) {
+        if (snbt.isBlank()) {
+            return;
         }
-        return Optional.of(cached);
+        cache.storeTrusted(uuid, snbt);
     }
 
     @NotNull

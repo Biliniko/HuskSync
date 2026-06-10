@@ -42,6 +42,7 @@ public class CosmeticArmorIntegration implements ModIntegration {
 
     private final BukkitHuskSync plugin;
     private final ModDataManager manager;
+    private final ReflectiveModSupport reflection;
 
     private boolean resolved = false;
     private boolean available = false;
@@ -57,6 +58,7 @@ public class CosmeticArmorIntegration implements ModIntegration {
     public CosmeticArmorIntegration(@NotNull BukkitHuskSync plugin, @NotNull ModDataManager manager) {
         this.plugin = plugin;
         this.manager = manager;
+        this.reflection = new ReflectiveModSupport(plugin, "CosmeticArmorReworked");
     }
 
     @NotNull
@@ -84,14 +86,14 @@ public class CosmeticArmorIntegration implements ModIntegration {
         if (stacks == null) {
             return List.of();
         }
-        final Integer slots = (Integer) invoke(stacks, getSlots);
+        final Integer slots = (Integer) reflection.invoke(getSlots, stacks);
         final int limit = Math.min(SLOT_COUNT, slots == null || slots <= 0 ? SLOT_COUNT : slots);
         final @Nullable List<String> hiddenFlags = captureHiddenFlags(stacks);
         final List<ModSlotData> data = new ArrayList<>();
         for (int i = 0; i < limit; i++) {
-            final Object nmsItem = invoke(stacks, getStackInSlot, i);
+            final Object nmsItem = reflection.invoke(getStackInSlot, stacks, i);
             final ItemStack bukkitItem = manager.toBukkitItem(nmsItem);
-            final Boolean skinArmor = (Boolean) invoke(stacks, isSkinArmor, i);
+            final Boolean skinArmor = (Boolean) reflection.invoke(isSkinArmor, stacks, i);
             final List<String> slotHidden = i == 0 ? hiddenFlags : null;
             data.add(new ModSlotData(SLOT_KEY, i, manager.serializeItem(bukkitItem), skinArmor, slotHidden));
         }
@@ -104,7 +106,7 @@ public class CosmeticArmorIntegration implements ModIntegration {
         if (stacks == null) {
             return false;
         }
-        final Integer slots = (Integer) invoke(stacks, getSlots);
+        final Integer slots = (Integer) reflection.invoke(getSlots, stacks);
         final int limit = Math.min(SLOT_COUNT, slots == null || slots <= 0 ? SLOT_COUNT : slots);
         final Set<String> hiddenFlags = extractHiddenFlags(data);
         boolean success = true;
@@ -115,10 +117,10 @@ public class CosmeticArmorIntegration implements ModIntegration {
             }
             final ItemStack bukkitItem = manager.deserializeItem(slot.itemNbt());
             final Object nmsItem = manager.toNmsItem(bukkitItem);
-            invoke(stacks, setStackInSlot, slot.slotIndex(),
+            reflection.invoke(setStackInSlot, stacks, slot.slotIndex(),
                     nmsItem == null ? manager.getEmptyNmsItem() : nmsItem);
             if (slot.skinArmor() != null) {
-                invoke(stacks, setSkinArmor, slot.slotIndex(), slot.skinArmor());
+                reflection.invoke(setSkinArmor, stacks, slot.slotIndex(), slot.skinArmor());
             }
         }
         if (hiddenFlags != null) {
@@ -139,7 +141,7 @@ public class CosmeticArmorIntegration implements ModIntegration {
             }
             hidden.add(modid + ":" + identifier);
         };
-        invoke(stacks, forEachHidden, consumer);
+        reflection.invoke(forEachHidden, stacks, consumer);
         if (hidden.isEmpty()) {
             return List.of();
         }
@@ -196,7 +198,7 @@ public class CosmeticArmorIntegration implements ModIntegration {
         if (separator <= 0 || separator >= entry.length() - 1) {
             return;
         }
-        invoke(stacks, setHidden, entry.substring(0, separator), entry.substring(separator + 1), set);
+        reflection.invoke(setHidden, stacks, entry.substring(0, separator), entry.substring(separator + 1), set);
     }
 
     private void resolve() {
@@ -242,22 +244,9 @@ public class CosmeticArmorIntegration implements ModIntegration {
             return null;
         }
         try {
-            return getCaStacks.invoke(null, player.getUniqueId());
+            return reflection.invokeStatic(getCaStacks, player.getUniqueId());
         } catch (Throwable e) {
             plugin.debug("Failed to access CosmeticArmorReworked stacks", e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Object invoke(@NotNull Object target, @NotNull Method method, Object... args) {
-        if (method == null) {
-            return null;
-        }
-        try {
-            return method.invoke(target, args);
-        } catch (Throwable e) {
-            plugin.debug("Failed to invoke CosmeticArmorReworked method: " + method.getName(), e);
             return null;
         }
     }

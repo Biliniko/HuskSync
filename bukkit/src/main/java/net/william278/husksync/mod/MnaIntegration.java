@@ -31,14 +31,11 @@ import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Built-in Mana and Artifice (mna) data integration.
@@ -69,8 +66,6 @@ public class MnaIntegration {
     private static final String MAPFX_PROVIDER_CLASS =
             "com.mna.capabilities.entity.MAPFXProvider";
 
-    private static final long CAPTURE_CACHE_TTL_MS = 5000L;
-
     private static final String ANSI_RESET = "\u001B[0m";
     private static final String ANSI_BRIGHT_MAGENTA = "\u001B[95m";
     private static final String ANSI_BRIGHT_CYAN = "\u001B[96m";
@@ -79,9 +74,9 @@ public class MnaIntegration {
     private static final String ANSI_BRIGHT_GREEN = "\u001B[92m";
 
     private final BukkitHuskSync plugin;
-    private final Map<String, Method> methodCache = new HashMap<>();
-    private final Map<UUID, CachedNbt> cachedCaps = new ConcurrentHashMap<>();
-    private final Map<UUID, CachedNbt> cachedPersistent = new ConcurrentHashMap<>();
+    private final ReflectiveModSupport reflection;
+    private final ModSyncCache<String> capsCache = new ModSyncCache<>();
+    private final ModSyncCache<String> persistentCache = new ModSyncCache<>();
 
     private boolean resolved;
     private boolean available;
@@ -109,11 +104,9 @@ public class MnaIntegration {
     @Nullable
     private Method sendMAPFXMessage;
 
-    private record CachedNbt(@NotNull String snbt, long timestamp) {
-    }
-
     public MnaIntegration(@NotNull BukkitHuskSync plugin) {
         this.plugin = plugin;
+        this.reflection = new ReflectiveModSupport(plugin, "MNA");
     }
 
     public boolean isAvailable() {
@@ -129,14 +122,14 @@ public class MnaIntegration {
         // Capability sync
         if (serializeCaps != null) {
             captureCapsFromHandle(player, "pre-cache")
-                    .ifPresent(snbt -> cache(cachedCaps, player.getUniqueId(), snbt));
+                    .ifPresent(snbt -> cache(capsCache, player.getUniqueId(), snbt));
         }
 
         // Persistent NBT sync
         if (getPersistentData != null && getMnaSettings().getPersistentMode() != Settings.SynchronizationSettings
                 .MnaSettings.PersistentMode.OFF) {
             capturePersistentFromHandle(player, "pre-cache")
-                    .ifPresent(snbt -> cache(cachedPersistent, player.getUniqueId(), snbt));
+                    .ifPresent(snbt -> cache(persistentCache, player.getUniqueId(), snbt));
         }
     }
 
@@ -145,27 +138,15 @@ public class MnaIntegration {
         if (!isAvailable() || serializeCaps == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "capture skipped")
                     + " (integration unavailable) for " + player.getName()));
-            return Optional.empty();
+            return captureFallback(capsCache, player, "caps", "integration unavailable");
         }
 
-        final Optional<CachedNbt> cached = getCached(cachedCaps, player.getUniqueId());
         if (!player.isOnline()) {
-            cached.ifPresent(entry -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture using cached")
-                    + " ageMs=" + color(ANSI_BRIGHT_CYAN, String.valueOf(System.currentTimeMillis() - entry.timestamp()))
-                    + " for " + player.getName())));
-            return cached.map(CachedNbt::snbt);
+            return captureFallback(capsCache, player, "caps", "player offline");
         }
 
         final Optional<String> direct = captureCapsFromHandle(player, "capture");
-        if (direct.isPresent()) {
-            cache(cachedCaps, player.getUniqueId(), direct.get());
-            return direct;
-        }
-
-        cached.ifPresent(entry -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture using cached")
-                + " ageMs=" + color(ANSI_BRIGHT_CYAN, String.valueOf(System.currentTimeMillis() - entry.timestamp()))
-                + " for " + player.getName())));
-        return cached.map(CachedNbt::snbt);
+        return capture(capsCache, player, "caps", direct, "direct capture failed");
     }
 
     @NotNull
@@ -177,53 +158,43 @@ public class MnaIntegration {
         if (!isAvailable() || getPersistentData == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "capture persistent skipped")
                     + " (integration unavailable) for " + player.getName()));
-            return Optional.empty();
+            return captureFallback(persistentCache, player, "persistent", "integration unavailable");
         }
 
-        final Optional<CachedNbt> cached = getCached(cachedPersistent, player.getUniqueId());
         if (!player.isOnline()) {
-            cached.ifPresent(entry -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture persistent using cached")
-                    + " ageMs=" + color(ANSI_BRIGHT_CYAN, String.valueOf(System.currentTimeMillis() - entry.timestamp()))
-                    + " for " + player.getName())));
-            return cached.map(CachedNbt::snbt);
+            return captureFallback(persistentCache, player, "persistent", "player offline");
         }
 
         final Optional<String> direct = capturePersistentFromHandle(player, "capture");
-        if (direct.isPresent()) {
-            cache(cachedPersistent, player.getUniqueId(), direct.get());
-            return direct;
-        }
-
-        cached.ifPresent(entry -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture persistent using cached")
-                + " ageMs=" + color(ANSI_BRIGHT_CYAN, String.valueOf(System.currentTimeMillis() - entry.timestamp()))
-                + " for " + player.getName())));
-        return cached.map(CachedNbt::snbt);
+        return capture(persistentCache, player, "persistent", direct, "direct capture failed");
     }
 
-    public void applyCaps(@NotNull Player player, @Nullable String snbt) {
-        if (!isAvailable() || deserializeCaps == null) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps skipped")
-                    + " (integration unavailable) for " + player.getName()));
-            return;
-        }
+    @NotNull
+    public ApplyResult applyCaps(@NotNull Player player, @Nullable String snbt) {
         if (snbt == null || snbt.isBlank()) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps skipped")
                     + " (empty NBT) for " + player.getName()));
-            return;
+            return ApplyResult.skipped("empty nbt");
+        }
+        capsCache.storePending(player.getUniqueId(), snbt);
+        if (!isAvailable() || deserializeCaps == null) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps skipped")
+                    + " (integration unavailable) for " + player.getName()));
+            return ApplyResult.pending("integration unavailable");
         }
 
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps failed")
                     + " (nms player null) for " + player.getName()));
-            return;
+            return ApplyResult.pending("nms player null");
         }
 
         final Object tag = parseCompoundTag(snbt);
         if (tag == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply caps failed")
                     + " (parseTag null) for " + player.getName()));
-            return;
+            return ApplyResult.failed("parseTag null");
         }
 
         try {
@@ -247,7 +218,7 @@ public class MnaIntegration {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "apply caps key parse failed")
                     + " for " + player.getName()));
         }
-        invoke(deserializeCaps, nmsPlayer, tag);
+        reflection.invoke(deserializeCaps, nmsPlayer, tag);
         plugin.debug(formatDebug("apply caps ok for " + color(ANSI_BRIGHT_CYAN, player.getName())));
 
         // Ensure the mod recalculates and notifies clients (capability deserialization alone is often insufficient)
@@ -263,36 +234,41 @@ public class MnaIntegration {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "apply caps post-bukkit read failed")
                     + " for " + player.getName()));
         }
+        plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "apply caps pending confirmation")
+                + " for " + player.getName()));
+        return ApplyResult.pending("awaiting capture confirmation");
     }
 
-    public void applyPersistent(@NotNull Player player, @Nullable String snbt) {
+    @NotNull
+    public ApplyResult applyPersistent(@NotNull Player player, @Nullable String snbt) {
         final Settings.SynchronizationSettings.MnaSettings settings = getMnaSettings();
         if (settings.getPersistentMode() == Settings.SynchronizationSettings.MnaSettings.PersistentMode.OFF) {
-            return;
-        }
-        if (!isAvailable() || getPersistentData == null) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent skipped")
-                    + " (integration unavailable) for " + player.getName()));
-            return;
+            return ApplyResult.skipped("persistent sync disabled");
         }
         if (snbt == null || snbt.isBlank()) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent skipped")
                     + " (empty NBT) for " + player.getName()));
-            return;
+            return ApplyResult.skipped("empty nbt");
+        }
+        persistentCache.storePending(player.getUniqueId(), snbt);
+        if (!isAvailable() || getPersistentData == null) {
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent skipped")
+                    + " (integration unavailable) for " + player.getName()));
+            return ApplyResult.pending("integration unavailable");
         }
 
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent failed")
                     + " (nms player null) for " + player.getName()));
-            return;
+            return ApplyResult.pending("nms player null");
         }
 
-        final Object tagObj = invoke(getPersistentData, nmsPlayer);
+        final Object tagObj = reflection.invoke(getPersistentData, nmsPlayer);
         if (tagObj == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent failed")
                     + " (persistent tag null) for " + player.getName()));
-            return;
+            return ApplyResult.pending("persistent tag null");
         }
 
         try {
@@ -336,22 +312,26 @@ public class MnaIntegration {
                     + ", mergedKeys=" + color(ANSI_BRIGHT_CYAN, String.valueOf(mergedKeys.size()))
                     + ", keptKeys=" + color(ANSI_BRIGHT_CYAN, formatKeys(incomingKept, 25))
                     + ", mode=" + color(ANSI_BRIGHT_CYAN, settings.getPersistentMode().name())));
+            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "apply persistent pending confirmation")
+                    + " for " + player.getName()));
+            return ApplyResult.pending("awaiting capture confirmation");
         } catch (Throwable e) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "apply persistent failed")
                     + " for " + player.getName()), e);
+            return ApplyResult.failed("apply failed");
         }
     }
 
     @NotNull
     private Optional<String> captureCapsFromHandle(@NotNull Player player, @NotNull String phase) {
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " failed")
                     + " (nms player null) for " + player.getName()));
             return Optional.empty();
         }
 
-        final Object tagObj = invoke(serializeCaps, nmsPlayer);
+        final Object tagObj = reflection.invoke(serializeCaps, nmsPlayer);
         if (tagObj == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " failed")
                     + " (serializeCaps returned null) for " + player.getName()));
@@ -390,14 +370,14 @@ public class MnaIntegration {
 
     @NotNull
     private Optional<String> capturePersistentFromHandle(@NotNull Player player, @NotNull String phase) {
-        final Object nmsPlayer = getHandle(player);
+        final Object nmsPlayer = reflection.getHandle(player);
         if (nmsPlayer == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " persistent failed")
                     + " (nms player null) for " + player.getName()));
             return Optional.empty();
         }
 
-        final Object tagObj = invoke(getPersistentData, nmsPlayer);
+        final Object tagObj = reflection.invoke(getPersistentData, nmsPlayer);
         if (tagObj == null) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, phase + " persistent failed")
                     + " (persistent tag null) for " + player.getName()));
@@ -446,12 +426,12 @@ public class MnaIntegration {
         // Progression: reapply tier attribute modifiers after NBT load
         final Object progression = getCapabilityInstance(nmsPlayer, PROGRESSION_PROVIDER_CLASS, "PROGRESSION");
         if (progression != null) {
-            final Object tierObj = invoke(progression, "getTier");
+            final Object tierObj = reflection.invoke(progression, "getTier");
             final int tier = tierObj instanceof Number n ? n.intValue() : 0;
             plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "post-apply")
                     + " progression tier=" + color(ANSI_BRIGHT_CYAN, String.valueOf(tier))
                     + " (invoking setTier(tier, player, false))"));
-            invoke(progression, "setTier", tier, nmsPlayer, false);
+            reflection.invoke(progression, "setTier", tier, nmsPlayer, false);
             plugin.debug(formatDebug(color(ANSI_BRIGHT_GREEN, "post-apply ok") + " progression setTier invoked"));
         } else {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "post-apply skipped")
@@ -461,7 +441,7 @@ public class MnaIntegration {
         // Rote: ensure dirty so client sync/polling doesn't get skipped
         final Object rote = getCapabilityInstance(nmsPlayer, ROTE_PROVIDER_CLASS, "ROTE");
         if (rote != null) {
-            invoke(rote, "setDirty");
+            reflection.invoke(rote, "setDirty");
             plugin.debug(formatDebug(color(ANSI_BRIGHT_GREEN, "post-apply ok") + " rote setDirty()"));
         } else {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "post-apply skipped") + " rote capability missing"));
@@ -471,7 +451,7 @@ public class MnaIntegration {
         if (mna.isSyncAura()) {
             final Object aura = getCapabilityInstance(nmsPlayer, AURA_PROVIDER_CLASS, "AURA");
             if (aura != null) {
-                invoke(aura, "setDirty");
+                reflection.invoke(aura, "setDirty");
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_GREEN, "post-apply ok") + " aura setDirty()"));
             } else {
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "post-apply skipped") + " aura capability missing"));
@@ -483,7 +463,7 @@ public class MnaIntegration {
         // MAPFX: don't rely on MAPFX#sync(needsSync); send packet directly
         if (mna.isSyncMapfx()) {
             if (sendMAPFXMessage != null) {
-                invokeStatic(sendMAPFXMessage, nmsPlayer);
+                reflection.invokeStatic(sendMAPFXMessage, nmsPlayer);
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_GREEN, "post-apply ok") + " sendMAPFXMessage()"));
             } else {
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "post-apply skipped")
@@ -503,7 +483,7 @@ public class MnaIntegration {
                     + " auraTracking=" + coloredBool(sendAuraSyncMessageTracking != null)));
 
             if (sendMagicSyncMessage != null) {
-                invokeStatic(sendMagicSyncMessage, nmsPlayer);
+                reflection.invokeStatic(sendMagicSyncMessage, nmsPlayer);
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "post-apply") + " sent magic sync"));
             } else {
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "post-apply skipped")
@@ -511,7 +491,7 @@ public class MnaIntegration {
             }
 
             if (sendProgressionSyncMessage != null) {
-                invokeStatic(sendProgressionSyncMessage, nmsPlayer);
+                reflection.invokeStatic(sendProgressionSyncMessage, nmsPlayer);
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "post-apply") + " sent progression sync"));
             } else {
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "post-apply skipped")
@@ -519,7 +499,7 @@ public class MnaIntegration {
             }
 
             if (sendRoteSyncMessage != null) {
-                invokeStatic(sendRoteSyncMessage, nmsPlayer);
+                reflection.invokeStatic(sendRoteSyncMessage, nmsPlayer);
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "post-apply") + " sent rote sync"));
             } else {
                 plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "post-apply skipped")
@@ -528,7 +508,7 @@ public class MnaIntegration {
 
             if (mna.isSyncAura()) {
                 if (sendAuraSyncMessageTo != null) {
-                    invokeStatic(sendAuraSyncMessageTo, nmsPlayer, nmsPlayer);
+                    reflection.invokeStatic(sendAuraSyncMessageTo, nmsPlayer, nmsPlayer);
                     plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "post-apply") + " sent aura self sync"));
                 } else {
                     plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "post-apply skipped")
@@ -536,7 +516,7 @@ public class MnaIntegration {
                 }
 
                 if (sendAuraSyncMessageTracking != null) {
-                    invokeStatic(sendAuraSyncMessageTracking, nmsPlayer);
+                    reflection.invokeStatic(sendAuraSyncMessageTracking, nmsPlayer);
                     plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "post-apply") + " sent aura tracking sync"));
                 } else {
                     plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "post-apply skipped")
@@ -573,7 +553,7 @@ public class MnaIntegration {
             parseTag = findTagParser(parserClass, compoundTagClass);
 
             final Class<?> serverPlayerClass = Class.forName(SERVER_PLAYER_CLASS);
-            serializeCaps = findMethod(serverPlayerClass, "serializeCaps", 0);
+            serializeCaps = reflection.findMethodPreferStatic(serverPlayerClass, "serializeCaps", 0);
             if (serializeCaps != null && !compoundTagClass.isAssignableFrom(serializeCaps.getReturnType())) {
                 serializeCaps = null;
             }
@@ -586,7 +566,7 @@ public class MnaIntegration {
                 }
             }
 
-            deserializeCaps = findMethod(serverPlayerClass, "deserializeCaps", 1);
+            deserializeCaps = reflection.findMethodPreferStatic(serverPlayerClass, "deserializeCaps", 1);
             if (deserializeCaps != null && (deserializeCaps.getParameterCount() != 1
                     || !compoundTagClass.isAssignableFrom(deserializeCaps.getParameterTypes()[0]))) {
                 deserializeCaps = null;
@@ -600,7 +580,7 @@ public class MnaIntegration {
                 }
             }
 
-            getPersistentData = findMethod(serverPlayerClass, "getPersistentData", 0);
+            getPersistentData = reflection.findMethodPreferStatic(serverPlayerClass, "getPersistentData", 0);
             if (getPersistentData != null && !compoundTagClass.isAssignableFrom(getPersistentData.getReturnType())) {
                 getPersistentData = null;
             }
@@ -656,12 +636,12 @@ public class MnaIntegration {
 
     @Nullable
     private Method findTagParser(@NotNull Class<?> parserClass, @NotNull Class<?> compoundTagClass) {
-        Method method = findMethod(parserClass, "parseTag", 1);
+        Method method = reflection.findMethod(parserClass, "parseTag", 1);
         if (method != null && compoundTagClass.isAssignableFrom(method.getReturnType())) {
             plugin.debug(formatDebug("TagParser method=" + color(ANSI_BRIGHT_CYAN, "parseTag")));
             return method;
         }
-        method = findMethod(parserClass, "parse", 1);
+        method = reflection.findMethod(parserClass, "parse", 1);
         if (method != null && compoundTagClass.isAssignableFrom(method.getReturnType())) {
             plugin.debug(formatDebug("TagParser method=" + color(ANSI_BRIGHT_CYAN, "parse")));
             return method;
@@ -685,97 +665,12 @@ public class MnaIntegration {
             return null;
         }
         try {
-            return parseTag.invoke(null, snbt);
+            return reflection.invokeStatic(parseTag, snbt);
         } catch (Throwable e) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "parse NBT failed")
                     + " bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(snbt.length()))), e);
             return null;
         }
-    }
-
-    @Nullable
-    private Object getHandle(@NotNull Player player) {
-        try {
-            final Method method = findMethod(player.getClass(), "getHandle", 0);
-            if (method == null) {
-                plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "getHandle missing")
-                        + " for " + player.getName()));
-                return null;
-            }
-            return method.invoke(player);
-        } catch (Throwable e) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "getHandle failed")
-                    + " for " + player.getName()), e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Object invoke(@Nullable Method method, @Nullable Object target, Object... args) {
-        if (method == null || target == null) {
-            return null;
-        }
-        try {
-            return method.invoke(target, args);
-        } catch (Throwable e) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "invoke failed")
-                    + " " + method.getName()), e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Object invokeStatic(@NotNull Method method, Object... args) {
-        try {
-            return method.invoke(null, args);
-        } catch (Throwable e) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "invoke static failed")
-                    + " " + method.getName()), e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Object invoke(@NotNull Object target, @NotNull String methodName, Object... args) {
-        final Method method = findMethod(target.getClass(), methodName, args.length);
-        if (method == null) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "method missing")
-                    + " " + methodName));
-            return null;
-        }
-        try {
-            return method.invoke(target, args);
-        } catch (Throwable e) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "invoke failed")
-                    + " " + methodName), e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Method findMethod(@NotNull Class<?> type, @NotNull String name, int params) {
-        final String key = type.getName() + "#" + name + "#" + params;
-        if (methodCache.containsKey(key)) {
-            return methodCache.get(key);
-        }
-        for (Method method : type.getMethods()) {
-            if (method.getName().equals(name) && method.getParameterCount() == params) {
-                method.setAccessible(true);
-                methodCache.put(key, method);
-                return method;
-            }
-        }
-        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-            for (Method method : current.getDeclaredMethods()) {
-                if (method.getName().equals(name) && method.getParameterCount() == params) {
-                    method.setAccessible(true);
-                    methodCache.put(key, method);
-                    return method;
-                }
-            }
-        }
-        methodCache.put(key, null);
-        return null;
     }
 
     @Nullable
@@ -829,13 +724,13 @@ public class MnaIntegration {
             }
 
             Object lazy = null;
-            final Method getCapability = findMethod(nmsPlayer.getClass(), "getCapability", 1);
+            final Method getCapability = reflection.findMethod(nmsPlayer.getClass(), "getCapability", 1);
             if (getCapability != null) {
-                lazy = getCapability.invoke(nmsPlayer, capability);
+                lazy = reflection.invoke(getCapability, nmsPlayer, capability);
             } else {
-                final Method getCapability2 = findMethod(nmsPlayer.getClass(), "getCapability", 2);
+                final Method getCapability2 = reflection.findMethod(nmsPlayer.getClass(), "getCapability", 2);
                 if (getCapability2 != null) {
-                    lazy = getCapability2.invoke(nmsPlayer, capability, null);
+                    lazy = reflection.invoke(getCapability2, nmsPlayer, capability, null);
                 }
             }
             if (lazy == null) {
@@ -843,7 +738,7 @@ public class MnaIntegration {
             }
 
             // LazyOptional#orElse(T other)
-            return invoke(lazy, "orElse", (Object) null);
+            return reflection.invoke(lazy, "orElse", (Object) null);
         } catch (Throwable e) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "getCapability failed")
                     + " " + providerClassName + "#" + capabilityFieldName), e);
@@ -903,56 +798,74 @@ public class MnaIntegration {
     }
 
     @NotNull
-    private String cacheName(@NotNull Map<UUID, CachedNbt> cache) {
-        if (cache == cachedCaps) {
+    private Optional<String> capture(@NotNull ModSyncCache<String> cache, @NotNull Player player,
+                                     @NotNull String type, @NotNull Optional<String> direct,
+                                     @NotNull String unavailableReason) {
+        final CaptureResult<String> result = cache.capture(player.getUniqueId(), direct, unavailableReason);
+        logCaptureResult(type, player, result);
+        return result.dataOptional();
+    }
+
+    @NotNull
+    private Optional<String> captureFallback(@NotNull ModSyncCache<String> cache, @NotNull Player player,
+                                             @NotNull String type, @NotNull String reason) {
+        final CaptureResult<String> result = cache.fallback(player.getUniqueId(), reason);
+        logCaptureResult(type, player, result);
+        return result.dataOptional();
+    }
+
+    private void logCaptureResult(@NotNull String type, @NotNull Player player, @NotNull CaptureResult<String> result) {
+        switch (result.status()) {
+            case CAPTURED -> plugin.debug(formatDebug(color(ANSI_BRIGHT_GREEN, "capture ok")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " for " + color(ANSI_BRIGHT_CYAN, player.getName())
+                    + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(result.data().length()))
+                    + " (" + result.reason() + ")"));
+            case FALLBACK_PENDING -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture using pending")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " for " + player.getName()
+                    + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(result.data().length()))
+                    + " (" + result.reason() + ")"));
+            case FALLBACK_CACHED -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture using cached")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " for " + player.getName()
+                    + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(result.data().length()))
+                    + " (" + result.reason() + ")"));
+            case FALLBACK_TRUSTED -> plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "capture using trusted")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " for " + player.getName()
+                    + ", bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(result.data().length()))
+                    + " (" + result.reason() + ")"));
+            case UNAVAILABLE -> plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "capture failed")
+                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
+                    + " (no fallback data) for " + player.getName()
+                    + " (" + result.reason() + ")"));
+        }
+    }
+
+    @NotNull
+    private String cacheName(@NotNull ModSyncCache<String> cache) {
+        if (cache == capsCache) {
             return "caps";
         }
-        if (cache == cachedPersistent) {
+        if (cache == persistentCache) {
             return "persistent";
         }
         return "unknown";
     }
 
-    private void cache(@NotNull Map<UUID, CachedNbt> cache, @NotNull UUID uuid, @NotNull String snbt) {
+    private void cache(@NotNull ModSyncCache<String> cache, @NotNull UUID uuid, @NotNull String snbt) {
         if (snbt.isBlank()) {
             plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "cache skipped")
                     + " (blank SNBT) type=" + color(ANSI_BRIGHT_CYAN, cacheName(cache))
                     + " uuid=" + color(ANSI_BRIGHT_CYAN, uuid.toString())));
             return;
         }
-        cache.put(uuid, new CachedNbt(snbt, System.currentTimeMillis()));
+        cache.storeTrusted(uuid, snbt);
         plugin.debug(formatDebug(color(ANSI_BRIGHT_GREEN, "cache stored")
                 + " type=" + color(ANSI_BRIGHT_CYAN, cacheName(cache))
                 + " uuid=" + color(ANSI_BRIGHT_CYAN, uuid.toString())
                 + " bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(snbt.length()))));
-    }
-
-    @NotNull
-    private Optional<CachedNbt> getCached(@NotNull Map<UUID, CachedNbt> cache, @NotNull UUID uuid) {
-        final String type = cacheName(cache);
-        final CachedNbt cached = cache.get(uuid);
-        if (cached == null) {
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_RED, "cache miss")
-                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
-                    + " uuid=" + color(ANSI_BRIGHT_CYAN, uuid.toString())));
-            return Optional.empty();
-        }
-        final long age = System.currentTimeMillis() - cached.timestamp();
-        if (age > CAPTURE_CACHE_TTL_MS) {
-            cache.remove(uuid);
-            plugin.debug(formatDebug(color(ANSI_BRIGHT_YELLOW, "cache expired")
-                    + " type=" + color(ANSI_BRIGHT_CYAN, type)
-                    + " uuid=" + color(ANSI_BRIGHT_CYAN, uuid.toString())
-                    + " ageMs=" + color(ANSI_BRIGHT_CYAN, String.valueOf(age))
-                    + " ttlMs=" + color(ANSI_BRIGHT_CYAN, String.valueOf(CAPTURE_CACHE_TTL_MS))));
-            return Optional.empty();
-        }
-        plugin.debug(formatDebug(color(ANSI_BRIGHT_GREEN, "cache hit")
-                + " type=" + color(ANSI_BRIGHT_CYAN, type)
-                + " uuid=" + color(ANSI_BRIGHT_CYAN, uuid.toString())
-                + " ageMs=" + color(ANSI_BRIGHT_CYAN, String.valueOf(age))
-                + " bytes=" + color(ANSI_BRIGHT_CYAN, String.valueOf(cached.snbt().length()))));
-        return Optional.of(cached);
     }
 
     @NotNull

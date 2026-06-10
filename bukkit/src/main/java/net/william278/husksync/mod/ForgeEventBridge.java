@@ -25,8 +25,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Method;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.function.Consumer;
 
 public class ForgeEventBridge {
@@ -37,11 +35,12 @@ public class ForgeEventBridge {
             "net.minecraftforge.event.entity.player.PlayerEvent$PlayerLoggedOutEvent";
 
     private final BukkitHuskSync plugin;
-    private final Map<String, Method> methodCache = new HashMap<>();
+    private final ReflectiveModSupport reflection;
     private boolean registered;
 
     public ForgeEventBridge(@NotNull BukkitHuskSync plugin) {
         this.plugin = plugin;
+        this.reflection = new ReflectiveModSupport(plugin, "ForgeEventBridge");
         register();
     }
 
@@ -71,27 +70,9 @@ public class ForgeEventBridge {
                     manager.cachePlayerModData(player);
                 }
 
-                final SolCarrotIntegration solCarrot = plugin.getSolCarrotIntegration();
-                if (solCarrot != null) {
-                    solCarrot.cachePlayerData(player);
-                }
-
-                final UltimineIntegration ultimine = plugin.getUltimineIntegration();
-                if (ultimine != null) {
-                    plugin.debug("Ultimine logout pre-cache for " + player.getName());
-                    ultimine.cachePlayerData(player);
-                }
-
-                final MnaIntegration mna = plugin.getMnaIntegration();
-                if (mna != null) {
-                    plugin.debug("MNA logout pre-cache for " + player.getName());
-                    mna.cachePlayerData(player);
-                }
-
-                final ArsNouveauIntegration arsNouveau = plugin.getArsNouveauIntegration();
-                if (arsNouveau != null) {
-                    plugin.debug("Ars Nouveau logout pre-cache for " + player.getName());
-                    arsNouveau.cachePlayerData(player);
+                final BukkitModSyncRegistry registry = plugin.getModSyncRegistry();
+                if (registry != null && registry.hasAvailableIntegrations()) {
+                    registry.cachePlayerData(player);
                 }
             };
 
@@ -105,45 +86,15 @@ public class ForgeEventBridge {
 
     @Nullable
     private Player resolvePlayer(@NotNull Object event) {
-        Object entity = invoke(event, "getEntity");
+        Object entity = reflection.invoke(event, "getEntity");
         if (entity == null) {
-            entity = invoke(event, "getPlayer");
+            entity = reflection.invoke(event, "getPlayer");
         }
         if (entity == null) {
             return null;
         }
-        final Object bukkitEntity = invoke(entity, "getBukkitEntity");
+        final Object bukkitEntity = reflection.invoke(entity, "getBukkitEntity");
         return bukkitEntity instanceof Player player ? player : null;
-    }
-
-    @Nullable
-    private Object invoke(@NotNull Object target, @NotNull String methodName, Object... args) {
-        final Method method = findMethod(target.getClass(), methodName, args.length);
-        if (method == null) {
-            return null;
-        }
-        try {
-            return method.invoke(target, args);
-        } catch (Throwable e) {
-            return null;
-        }
-    }
-
-    @Nullable
-    private Method findMethod(@NotNull Class<?> type, @NotNull String name, int params) {
-        final String key = type.getName() + "#" + name + "#" + params;
-        if (methodCache.containsKey(key)) {
-            return methodCache.get(key);
-        }
-        for (Method method : type.getMethods()) {
-            if (method.getName().equals(name) && method.getParameterCount() == params) {
-                method.setAccessible(true);
-                methodCache.put(key, method);
-                return method;
-            }
-        }
-        methodCache.put(key, null);
-        return null;
     }
 
 }
